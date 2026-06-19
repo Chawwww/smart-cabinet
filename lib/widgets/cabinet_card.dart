@@ -22,16 +22,20 @@ class CabinetCard extends StatelessWidget {
     final color = cabinet.color != null
         ? Color(int.parse(cabinet.color!.replaceFirst('#', '0xFF')))
         : const Color(0xFF4ECDC4);
-    
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    final subColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
+    final cardColor = Theme.of(context).cardTheme.color ?? Theme.of(context).colorScheme.surface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -39,36 +43,25 @@ class CabinetCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // Top colored section
             Container(
               height: 80,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
+                color: color.withValues(alpha: isDark ? 0.22 : 0.15),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Stack(
                 children: [
                   Center(
-                    child: Text(
-                      cabinet.icon ?? '🗄️',
-                      style: const TextStyle(fontSize: 40),
-                    ),
+                    child: Text(cabinet.icon ?? '🗄️',
+                        style: const TextStyle(fontSize: 40)),
                   ),
                   if (cabinet.isFavorite)
                     const Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Icon(
-                        Icons.favorite,
-                        color: Colors.red,
-                        size: 20,
-                      ),
-                    ),
+                        top: 8, right: 8,
+                        child: Icon(Icons.favorite, color: Colors.red, size: 20)),
                   Positioned(
-                    top: 8,
-                    left: 8,
+                    top: 4,
+                    left: 4,
                     child: IconButton(
                       icon: const Icon(Icons.edit, size: 18),
                       color: color,
@@ -78,71 +71,40 @@ class CabinetCard extends StatelessWidget {
                 ],
               ),
             ),
-            // Bottom info
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    cabinet.name,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2D3436),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(cabinet.name,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: textColor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(
-                        Icons.inventory_2,
-                        size: 14,
-                        color: Colors.grey.shade500,
-                      ),
+                      Icon(Icons.inventory_2, size: 13, color: subColor),
                       const SizedBox(width: 4),
-                      Text(
-                        '$itemCount items',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Icon(
-                        Icons.folder,
-                        size: 14,
-                        color: Colors.grey.shade500,
-                      ),
+                      Text('$itemCount items',
+                          style: TextStyle(fontSize: 11, color: subColor)),
+                      const SizedBox(width: 10),
+                      Icon(Icons.folder, size: 13, color: subColor),
                       const SizedBox(width: 4),
-                      Text(
-                        '$boxCount boxes',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
+                      Text('$boxCount boxes',
+                          style: TextStyle(fontSize: 11, color: subColor)),
                     ],
                   ),
                   if (cabinet.location != null) ...[
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(
-                          Icons.location_on,
-                          size: 14,
-                          color: Colors.grey.shade500,
-                        ),
+                        Icon(Icons.location_on, size: 13, color: subColor),
                         const SizedBox(width: 4),
-                        Text(
-                          cabinet.location!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
+                        Text(cabinet.location!,
+                            style: TextStyle(fontSize: 11, color: subColor)),
                       ],
                     ),
                   ],

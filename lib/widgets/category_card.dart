@@ -20,16 +20,20 @@ class CategoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Color(int.parse(category.color.replaceFirst('#', '0xFF')));
-    
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    final subColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
+    final cardColor = Theme.of(context).cardTheme.color ?? Theme.of(context).colorScheme.surface;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -42,37 +46,32 @@ class CategoryCard extends StatelessWidget {
               width: 60,
               height: 60,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
+                color: color.withValues(alpha: isDark ? 0.22 : 0.15),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Center(
-                child: Text(
-                  category.icon,
-                  style: const TextStyle(fontSize: 30),
-                ),
+                child: Text(category.icon,
+                    style: const TextStyle(fontSize: 30)),
               ),
             ),
-            const SizedBox(height: 12),
-            Text(
-              category.name,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2D3436),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '$itemCount items',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Color(0xFF636E72),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                category.name,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: textColor),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
+            Text('$itemCount items',
+                style: TextStyle(fontSize: 12, color: subColor)),
+            const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

@@ -31,44 +31,55 @@ class _ItemsScreenState extends State<ItemsScreen> {
   Widget build(BuildContext context) {
     final itemProvider = context.watch<ItemProvider>();
     final categoryProvider = context.watch<CategoryProvider>();
-    
-    if (itemProvider.isLoading) {
-      return const LoadingWidget();
-    }
-    
+
+    // FIX: theme-aware chip colors
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final chipBg = isDark ? const Color(0xFF2D2D2D) : Colors.white;
+    final chipBorder = isDark ? Colors.grey.shade700 : Colors.grey.shade300;
+
+    if (itemProvider.isLoading) return const LoadingWidget();
+
     final items = itemProvider.getFilteredItems(
       category: _selectedCategory,
       status: _selectedStatus,
     );
-    
+
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          height: 60,
+        // Category chips
+        SizedBox(
+          height: 56,
           child: ListView(
             scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
-              _buildCategoryChip('All', _selectedCategory == 'All'),
-              ...categoryProvider.categories.map((category) {
-                return _buildCategoryChip(
-                  category.name,
-                  _selectedCategory == category.id,
-                );
-              }),
+              _chip('All', _selectedCategory == 'All', chipBg, chipBorder,
+                  () => setState(() => _selectedCategory = 'All')),
+              ...categoryProvider.categories.map((cat) => _chip(
+                    cat.name,
+                    _selectedCategory == cat.id,
+                    chipBg,
+                    chipBorder,
+                    () => setState(() => _selectedCategory = cat.id!),
+                  )),
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          height: 40,
+        // Status chips
+        SizedBox(
+          height: 44,
           child: ListView(
             scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
-              _buildStatusChip('All', _selectedStatus == 'All'),
-              _buildStatusChip('Inside', _selectedStatus == 'inside'),
-              _buildStatusChip('Taken', _selectedStatus == 'taken'),
-              _buildStatusChip('Expired', _selectedStatus == 'expired'),
+              _chip('All', _selectedStatus == 'All', chipBg, chipBorder,
+                  () => setState(() => _selectedStatus = 'All')),
+              _chip('Inside', _selectedStatus == 'inside', chipBg, chipBorder,
+                  () => setState(() => _selectedStatus = 'inside')),
+              _chip('Taken', _selectedStatus == 'taken', chipBg, chipBorder,
+                  () => setState(() => _selectedStatus = 'taken')),
+              _chip('Expired', _selectedStatus == 'expired', chipBg, chipBorder,
+                  () => setState(() => _selectedStatus = 'expired')),
             ],
           ),
         ),
@@ -81,7 +92,8 @@ class _ItemsScreenState extends State<ItemsScreen> {
                 )
               : GridView.builder(
                   padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     childAspectRatio: 0.85,
                     crossAxisSpacing: 12,
@@ -92,14 +104,12 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     final item = items[index];
                     return ItemCard(
                       item: item,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ItemDetailScreen(item: item),
-                          ),
-                        );
-                      },
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ItemDetailScreen(item: item),
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -108,49 +118,21 @@ class _ItemsScreenState extends State<ItemsScreen> {
     );
   }
 
-  Widget _buildCategoryChip(String label, bool selected) {
+  Widget _chip(String label, bool selected, Color bg, Color border,
+      VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
         label: Text(label),
         selected: selected,
-        onSelected: (_) {
-          setState(() {
-            _selectedCategory = selected ? 'All' : label;
-          });
-        },
-        backgroundColor: Colors.white,
+        onSelected: (_) => onTap(),
+        backgroundColor: bg,
         selectedColor: const Color(0xFF4ECDC4).withValues(alpha: 0.2),
         checkmarkColor: const Color(0xFF4ECDC4),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(
-            color: selected ? const Color(0xFF4ECDC4) : Colors.grey.shade300,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusChip(String label, bool selected) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) {
-          setState(() {
-            _selectedStatus = selected ? 'All' : label.toLowerCase();
-          });
-        },
-        backgroundColor: Colors.white,
-        selectedColor: const Color(0xFF4ECDC4).withValues(alpha: 0.2),
-        checkmarkColor: const Color(0xFF4ECDC4),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(
-            color: selected ? const Color(0xFF4ECDC4) : Colors.grey.shade300,
-          ),
+              color: selected ? const Color(0xFF4ECDC4) : border),
         ),
       ),
     );

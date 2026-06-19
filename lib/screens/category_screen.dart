@@ -27,103 +27,87 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   Widget build(BuildContext context) {
     final categoryProvider = context.watch<CategoryProvider>();
-    final itemProvider = context.watch<ItemProvider>();
-    
-    if (categoryProvider.isLoading) {
-      return const LoadingWidget();
-    }
-    
-    final categories = categoryProvider.categories;
-    
+    final itemProvider     = context.watch<ItemProvider>();
+
+    if (categoryProvider.isLoading) return const LoadingWidget();
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF2FFFF),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF2FFFF),
-        elevation: 0,
-        title: const Text(
-          'Categories',
-          style: TextStyle(
-            color: Color(0xFF2D3436),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: const Text('Categories'),
         actions: [
           IconButton(
             icon: const Icon(Icons.add, color: Color(0xFF4ECDC4)),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AddEditCategoryScreen(),
-                ),
-              );
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const AddEditCategoryScreen()),
+            ),
           ),
         ],
       ),
-      body: categories.isEmpty
-          ? const EmptyState(
+      body: categoryProvider.categories.isEmpty
+          ? EmptyState(
               icon: Icons.category_outlined,
               title: 'No Categories',
-              subtitle: 'Create your first category to organize your items',
+              subtitle: 'Create your first category to organise your items',
+              action: ElevatedButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AddEditCategoryScreen()),
+                ),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4ECDC4)),
+                child: const Text('Add Category'),
+              ),
             )
           : GridView.builder(
               padding: const EdgeInsets.all(16),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                childAspectRatio: 0.9,
+                childAspectRatio: 0.85,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
               ),
-              itemCount: categories.length,
+              itemCount: categoryProvider.categories.length,
               itemBuilder: (context, index) {
-                final category = categories[index];
-                final itemCount = itemProvider.items
-                    .where((item) => item.categoryId == category.id)
+                final cat = categoryProvider.categories[index];
+                final count = itemProvider.items
+                    .where((i) => i.categoryId == cat.id)
                     .length;
-                
                 return CategoryCard(
-                  category: category,
-                  itemCount: itemCount,
-                  onTap: () {
-                    // Navigate to items filtered by this category
-                    Navigator.pushNamed(context, '/items', arguments: category.id);
-                  },
-                  onEdit: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => AddEditCategoryScreen(category: category),
-                      ),
-                    );
-                  },
+                  category: cat,
+                  itemCount: count,
+                  onTap: () => Navigator.pushNamed(
+                      context, '/items',
+                      arguments: cat.id),
+                  onEdit: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            AddEditCategoryScreen(category: cat)),
+                  ),
                   onDelete: () async {
                     final confirm = await showDialog<bool>(
                       context: context,
-                      builder: (context) => AlertDialog(
+                      builder: (_) => AlertDialog(
                         title: const Text('Delete Category'),
                         content: Text(
-                          'Are you sure you want to delete "${category.name}"? '
-                          'All items in this category will also be deleted.',
-                        ),
+                            'Delete "${cat.name}"? Items in this category will also be deleted.'),
                         actions: [
                           TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Cancel')),
                           TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.red,
-                            ),
-                            child: const Text('Delete'),
-                          ),
+                              onPressed: () => Navigator.pop(context, true),
+                              style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red),
+                              child: const Text('Delete')),
                         ],
                       ),
                     );
-                    
-                    if (confirm == true) {
-                      await categoryProvider.deleteCategory(category.id!);
+                    if (confirm == true && context.mounted) {
+                      await categoryProvider.deleteCategory(cat.id!);
                     }
                   },
                 );

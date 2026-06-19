@@ -13,51 +13,45 @@ class AuthProvider extends ChangeNotifier {
   String? _errorMessage;
 
   UserModel? get currentUser => _currentUser;
-
   bool get isLoading => _isLoading;
-
   bool get isLoggedIn => _isLoggedIn;
-
   String? get errorMessage => _errorMessage;
 
   AuthProvider() {
-    _authService.authStateChanges.listen(
-      (User? user) {
-        if (user != null) {
-          _loadUserData(user.uid);
-        } else {
-          _currentUser = null;
-          _isLoggedIn = false;
-          notifyListeners();
-        }
-      },
-    );
+    // Listen to Firebase auth state — handles app restart / token expiry
+    _authService.authStateChanges.listen((User? user) async {
+      if (user != null) {
+        await _loadUserData(user.uid);
+      } else {
+        _currentUser = null;
+        _isLoggedIn = false;
+        notifyListeners();
+      }
+    });
   }
 
   // ==========================
   // Load User Data
   // ==========================
-  Future<void> _loadUserData(
-    String uid,
-  ) async {
+  Future<void> _loadUserData(String uid) async {
     try {
-      final data =
-          await _authService.getUserData(uid);
-
+      final data = await _authService.getUserData(uid);
       if (data != null) {
-        _currentUser = UserModel.fromMap(
-          data,
-          uid,
-        );
-
+        _currentUser = UserModel.fromMap(data, uid);
         _isLoggedIn = true;
+      } else {
+        // User exists in Firebase Auth but not in Firestore yet (race after register)
+        // Retry once after a short delay
+        await Future.delayed(const Duration(milliseconds: 500));
+        final retryData = await _authService.getUserData(uid);
+        if (retryData != null) {
+          _currentUser = UserModel.fromMap(retryData, uid);
+          _isLoggedIn = true;
+        }
       }
     } catch (e) {
-      debugPrint(
-        'Error loading user data: $e',
-      );
+      debugPrint('Error loading user data: $e');
     }
-
     notifyListeners();
   }
 
@@ -65,17 +59,12 @@ class AuthProvider extends ChangeNotifier {
   // Check Login Status
   // ==========================
   Future<void> checkAuthStatus() async {
-    final user =
-        FirebaseAuth.instance.currentUser;
-
+    final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      await _loadUserData(
-        user.uid,
-      );
+      await _loadUserData(user.uid);
     } else {
       _currentUser = null;
       _isLoggedIn = false;
-
       notifyListeners();
     }
   }
@@ -83,27 +72,18 @@ class AuthProvider extends ChangeNotifier {
   // ==========================
   // Register
   // ==========================
-  Future<bool> register(
-    String name,
-    String email,
-    String password,
-  ) async {
+  Future<bool> register(String name, String email, String password) async {
     try {
       _setLoading(true);
-
       _errorMessage = null;
-
-      await _authService
-          .registerWithEmailAndPassword(
-        email,
-        password,
-        name,
-      );
-
+      await _authService.registerWithEmailAndPassword(email, password, name);
+      // Wait for Firestore write to propagate, then load user
+      await Future.delayed(const Duration(milliseconds: 800));
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) await _loadUserData(user.uid);
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
-
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
     } finally {
       _setLoading(false);
@@ -111,27 +91,23 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ==========================
-  // Login
+  // Login — KEY FIX:
+  // Wait for user data to load BEFORE returning true,
+  // so the profile/menu shows correct info immediately on navigation.
   // ==========================
-  Future<bool> login(
-    String email,
-    String password,
-  ) async {
+  Future<bool> login(String email, String password) async {
     try {
       _setLoading(true);
-
       _errorMessage = null;
-
-      await _authService
-          .loginWithEmailAndPassword(
-        email,
-        password,
-      );
-
-      return true;
+      final credential = await _authService.loginWithEmailAndPassword(email, password);
+      final uid = credential.user?.uid;
+      if (uid != null) {
+        // Load Firestore user data synchronously before telling the UI we're done
+        await _loadUserData(uid);
+      }
+      return _isLoggedIn;
     } catch (e) {
-      _errorMessage = e.toString();
-
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
     } finally {
       _setLoading(false);
@@ -144,9 +120,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     try {
       _setLoading(true);
-
       await _authService.signOut();
-
       _currentUser = null;
       _isLoggedIn = false;
     } finally {
@@ -157,22 +131,14 @@ class AuthProvider extends ChangeNotifier {
   // ==========================
   // Reset Password
   // ==========================
-  Future<bool> resetPassword(
-    String email,
-  ) async {
+  Future<bool> resetPassword(String email) async {
     try {
       _setLoading(true);
-
       _errorMessage = null;
-
-      await _authService.resetPassword(
-        email,
-      );
-
+      await _authService.resetPassword(email);
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
-
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
       return false;
     } finally {
       _setLoading(false);
@@ -182,30 +148,19 @@ class AuthProvider extends ChangeNotifier {
   // ==========================
   // Update Profile
   // ==========================
-  Future<void> updateProfile({
-    String? name,
-    String? avatar,
-  }) async {
+  Future<void> updateProfile({String? name, String? avatar}) async {
     try {
       _setLoading(true);
-
-      await _authService.updateProfile(
-        name: name,
-        avatar: avatar,
-      );
-
+      await _authService.updateProfile(name: name, avatar: avatar);
       if (_currentUser != null) {
-        _currentUser =
-            _currentUser!.copyWith(
+        _currentUser = _currentUser!.copyWith(
           name: name,
           avatar: avatar,
           updatedAt: DateTime.now(),
         );
       }
     } catch (e) {
-      debugPrint(
-        'Update profile error: $e',
-      );
+      debugPrint('Update profile error: $e');
     } finally {
       _setLoading(false);
     }
@@ -217,15 +172,11 @@ class AuthProvider extends ChangeNotifier {
   Future<void> deleteAccount() async {
     try {
       _setLoading(true);
-
       await _authService.deleteAccount();
-
       _currentUser = null;
       _isLoggedIn = false;
     } catch (e) {
-      debugPrint(
-        'Delete account error: $e',
-      );
+      debugPrint('Delete account error: $e');
     } finally {
       _setLoading(false);
     }
@@ -236,15 +187,11 @@ class AuthProvider extends ChangeNotifier {
   // ==========================
   void clearError() {
     _errorMessage = null;
-
     notifyListeners();
   }
 
-  void _setLoading(
-    bool value,
-  ) {
+  void _setLoading(bool value) {
     _isLoading = value;
-
     notifyListeners();
   }
 }
