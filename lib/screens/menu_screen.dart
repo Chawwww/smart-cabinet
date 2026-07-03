@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/language_provider.dart'; // ✅ ADDED
 import '../providers/item_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/cabinet_provider.dart';
+import '../l10n/app_localizations.dart'; // ✅ ADDED
 
 import 'profile_screen.dart';
 import 'login_screen.dart';
@@ -14,6 +16,8 @@ import 'add_edit_item_screen.dart';
 import 'ai_chat_screen.dart';
 import 'custom_fields_screen.dart';
 import 'help_support_screen.dart';
+import 'medicine_info_screen.dart';
+import 'language_selector_screen.dart'; // ✅ ADDED
 
 class MenuScreen extends StatelessWidget {
   const MenuScreen({super.key});
@@ -160,7 +164,9 @@ class MenuScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final authProvider  = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
+    final languageProvider = context.watch<LanguageProvider>(); // ✅ ADDED
     final user = authProvider.currentUser;
+    final appLocalizations = AppLocalizations.of(context)!; // ✅ ADDED
 
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor  = textColor.withValues(alpha: 0.55);
@@ -231,8 +237,8 @@ class MenuScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // ── Menu items — all wired up ─────────────
-          _item(context, Icons.person_outline, 'User Profile',
+          // ── Menu items ─────────────────────────────
+          _item(context, Icons.person_outline, appLocalizations.profile,
               onTap: () {
                 if (authProvider.isLoggedIn) {
                   Navigator.push(context,
@@ -245,45 +251,72 @@ class MenuScreen extends StatelessWidget {
                 }
               }),
 
-          _item(context, Icons.category_outlined, 'Manage Categories',
+          _item(context, Icons.category_outlined, appLocalizations.manageCategories,
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(
                       builder: (_) => const CategoryScreen()))),
 
-          _item(context, Icons.add_box_outlined, 'Add New Item',
+          _item(context, Icons.add_box_outlined, appLocalizations.addNewItem,
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(
                       builder: (_) => const AddEditItemScreen()))),
 
-          _item(context, Icons.auto_awesome_outlined, 'AI Assistant',
+          _item(context, Icons.auto_awesome_outlined, appLocalizations.aiAssistant,
               badge: 'AI',
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(
                       builder: (_) => const AIChatScreen()))),
 
-          _item(context, Icons.assessment_outlined, 'Reports',
+          // ════════════════════════════════════════════════
+          // MEDICINE INFO MENU ITEM
+          // ════════════════════════════════════════════════
+          _item(context, Icons.medication_outlined, appLocalizations.medicineInfo,
+              badge: '💊',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const MedicineInfoScreen()),
+              )),
+
+          _item(context, Icons.assessment_outlined, appLocalizations.reports,
               onTap: () => _showReports(context)),
 
-          _item(context, Icons.cloud_upload_outlined, 'Bulk Import',
+          _item(context, Icons.cloud_upload_outlined, appLocalizations.bulkImport,
               onTap: () => _showBulkImport(context)),
 
-          _item(context, Icons.tune_outlined, 'Custom Fields',
+          _item(context, Icons.tune_outlined, appLocalizations.customFields,
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(
                       builder: (_) => const CustomFieldsScreen()))),
 
-          _item(context, Icons.local_offer_outlined, 'Manage Tags',
+          _item(context, Icons.local_offer_outlined, appLocalizations.manageTags,
               onTap: () => _manageTags(context)),
 
-          _item(context, Icons.sync_outlined, 'Sync Inventory',
+          _item(context, Icons.sync_outlined, appLocalizations.syncInventory,
               onTap: () => _syncInventory(context)),
 
-          _item(context, Icons.help_outline, 'Help & Support',
+          _item(context, Icons.help_outline, appLocalizations.helpSupport,
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(
                       builder: (_) => const HelpSupportScreen()))),
 
           const Divider(),
+
+          // ════════════════════════════════════════════════
+          // ✅ LANGUAGE SELECTOR - ADDED HERE
+          // ════════════════════════════════════════════════
+          _item(
+            context, 
+            Icons.language, 
+            appLocalizations.language,
+            subtitle: '${languageProvider.getCurrentLanguageFlag()} ${languageProvider.getCurrentLanguageName()}',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LanguageSelectorScreen(),
+              ),
+            ),
+          ),
 
           // Dark mode toggle
           ListTile(
@@ -306,7 +339,7 @@ class MenuScreen extends StatelessWidget {
           const Divider(),
 
           if (authProvider.isLoggedIn)
-            _item(context, Icons.logout, 'Sign Out',
+            _item(context, Icons.logout, appLocalizations.logout,
                 color: Colors.red,
                 onTap: () => _signOut(context)),
 
@@ -325,6 +358,7 @@ class MenuScreen extends StatelessWidget {
     IconData icon,
     String title, {
     String? badge,
+    String? subtitle,
     Color? color,
     VoidCallback? onTap,
   }) {
@@ -336,6 +370,15 @@ class MenuScreen extends StatelessWidget {
           Icon(icon, color: color ?? textColor.withValues(alpha: 0.75)),
       title: Text(title,
           style: TextStyle(color: color ?? textColor)),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                color: subColor,
+              ),
+            )
+          : null,
       trailing: badge != null
           ? Row(
               mainAxisSize: MainAxisSize.min,

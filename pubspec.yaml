@@ -12,6 +12,12 @@ dependencies:
     sdk: flutter
 
   # ======================
+  # Localization
+  # ======================
+  flutter_localizations:  # ✅ ADDED
+    sdk: flutter
+
+  # ======================
   # Firebase
   # ======================
   firebase_core: ^4.11.0
@@ -19,6 +25,11 @@ dependencies:
   cloud_firestore: ^6.6.0
   firebase_storage: ^13.4.3
   firebase_messaging: ^16.4.0
+
+  # ======================
+  # Google Sign-In (Fixed)
+  # ======================
+  google_sign_in: ^6.2.1  # ✅ ADDED
 
   # ======================
   # UI
@@ -114,9 +125,39 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
   import_sorter: ^4.6.0
+  flutter_launcher_icons: ^0.14.4
+  intl_utils: ^2.8.7  # ✅ ADDED for localization generation
 
+# ======================
+# Flutter Configuration
+# ======================
 flutter:
+  generate: true  # ✅ ADDED - Required for localization
   uses-material-design: true
 
   assets:
     - assets/images/
+    # - assets/icon/  # ✅ Commented out if folder doesn't exist
+
+# ======================
+# App Icons Configuration
+# ======================
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#4ECDC4"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    background_color: "#4ECDC4"
+    theme_color: "#4ECDC4"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 48
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"

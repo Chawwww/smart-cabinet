@@ -6,17 +6,17 @@ import '../widgets/item_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_widget.dart';
 import 'item_detail_screen.dart';
+import 'add_edit_item_screen.dart';
 
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({super.key});
-
   @override
   State<ItemsScreen> createState() => _ItemsScreenState();
 }
 
 class _ItemsScreenState extends State<ItemsScreen> {
-  String _selectedCategory = 'All';
-  String _selectedStatus = 'All';
+  String _selectedCategoryId = 'All';
+  String _selectedStatus     = 'All';
 
   @override
   void initState() {
@@ -29,73 +29,132 @@ class _ItemsScreenState extends State<ItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final itemProvider = context.watch<ItemProvider>();
+    final itemProvider     = context.watch<ItemProvider>();
     final categoryProvider = context.watch<CategoryProvider>();
-
-    // FIX: theme-aware chip colors
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final chipBg = isDark ? const Color(0xFF2D2D2D) : Colors.white;
-    final chipBorder = isDark ? Colors.grey.shade700 : Colors.grey.shade300;
+    final textColor = Theme.of(context).colorScheme.onSurface;
 
     if (itemProvider.isLoading) return const LoadingWidget();
 
     final items = itemProvider.getFilteredItems(
-      category: _selectedCategory,
-      status: _selectedStatus,
+      category: _selectedCategoryId,
+      status:   _selectedStatus,
     );
 
     return Column(
       children: [
-        // Category chips
+        // ── Top bar: total count + Add button ────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Row(
+            children: [
+              Text(
+                '${itemProvider.totalItems} items',
+                style: TextStyle(
+                    fontSize: 13,
+                    color: textColor.withValues(alpha: 0.55),
+                    fontWeight: FontWeight.w500),
+              ),
+              const Spacer(),
+              // FIX: + button here in the screen, not floating over search
+              FilledButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AddEditItemScreen()),
+                ).then((_) => itemProvider.loadItems()),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Add Item',
+                    style: TextStyle(fontSize: 13)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF4ECDC4),
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 0),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ── Category chips ────────────────────────────
         SizedBox(
-          height: 56,
+          height: 48,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             children: [
-              _chip('All', _selectedCategory == 'All', chipBg, chipBorder,
-                  () => setState(() => _selectedCategory = 'All')),
+              _chip(context, 'All', _selectedCategoryId == 'All',
+                  isDark, () => setState(() {
+                        _selectedCategoryId = 'All';
+                      })),
               ...categoryProvider.categories.map((cat) => _chip(
+                    context,
                     cat.name,
-                    _selectedCategory == cat.id,
-                    chipBg,
-                    chipBorder,
-                    () => setState(() => _selectedCategory = cat.id!),
+                    _selectedCategoryId == cat.id,
+                    isDark,
+                    () => setState(
+                        () => _selectedCategoryId = cat.id ?? 'All'),
+                    emoji: cat.icon,
                   )),
             ],
           ),
         ),
-        // Status chips
+
+        // ── Status chips ──────────────────────────────
         SizedBox(
-          height: 44,
+          height: 38,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
             children: [
-              _chip('All', _selectedStatus == 'All', chipBg, chipBorder,
+              _chip(context, 'All', _selectedStatus == 'All', isDark,
                   () => setState(() => _selectedStatus = 'All')),
-              _chip('Inside', _selectedStatus == 'inside', chipBg, chipBorder,
+              _chip(context, 'Inside', _selectedStatus == 'inside',
+                  isDark,
                   () => setState(() => _selectedStatus = 'inside')),
-              _chip('Taken', _selectedStatus == 'taken', chipBg, chipBorder,
+              _chip(context, 'Taken', _selectedStatus == 'taken', isDark,
                   () => setState(() => _selectedStatus = 'taken')),
-              _chip('Expired', _selectedStatus == 'expired', chipBg, chipBorder,
+              _chip(context, 'Low Stock', _selectedStatus == 'low_stock',
+                  isDark,
+                  () =>
+                      setState(() => _selectedStatus = 'low_stock')),
+              _chip(context, 'Expired', _selectedStatus == 'expired',
+                  isDark,
                   () => setState(() => _selectedStatus = 'expired')),
             ],
           ),
         ),
+
+        // ── Grid ──────────────────────────────────────
         Expanded(
           child: items.isEmpty
-              ? const EmptyState(
+              ? EmptyState(
                   icon: Icons.inventory_2_outlined,
-                  title: 'It\'s empty here',
-                  subtitle: 'Add your first item by tapping the + button',
+                  title: 'Nothing here yet',
+                  subtitle: 'Tap "Add Item" above to get started',
+                  action: FilledButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AddEditItemScreen()),
+                    ),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Item'),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF4ECDC4)),
+                  ),
                 )
               : GridView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
-                    childAspectRatio: 0.85,
+                    childAspectRatio: 0.78,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                   ),
@@ -109,7 +168,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
                         MaterialPageRoute(
                           builder: (_) => ItemDetailScreen(item: item),
                         ),
-                      ),
+                      ).then((_) => itemProvider.loadItems()),
                     );
                   },
                 ),
@@ -118,21 +177,62 @@ class _ItemsScreenState extends State<ItemsScreen> {
     );
   }
 
-  Widget _chip(String label, bool selected, Color bg, Color border,
-      VoidCallback onTap) {
+  Widget _chip(
+    BuildContext context,
+    String label,
+    bool selected,
+    bool isDark,
+    VoidCallback onTap, {
+    String? emoji,
+  }) {
     return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        backgroundColor: bg,
-        selectedColor: const Color(0xFF4ECDC4).withValues(alpha: 0.2),
-        checkmarkColor: const Color(0xFF4ECDC4),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(
-              color: selected ? const Color(0xFF4ECDC4) : border),
+      padding: const EdgeInsets.only(right: 7),
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFF4ECDC4)
+                : (isDark
+                    ? const Color(0xFF2D2D2D)
+                    : Colors.white),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF4ECDC4)
+                  : (isDark
+                      ? Colors.grey.shade700
+                      : Colors.grey.shade300),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (emoji != null) ...[
+                Text(emoji, style: const TextStyle(fontSize: 12)),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected
+                      ? FontWeight.w600
+                      : FontWeight.normal,
+                  color: selected
+                      ? Colors.white
+                      : Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(alpha: 0.75),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

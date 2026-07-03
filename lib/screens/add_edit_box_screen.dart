@@ -1,99 +1,98 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import '../models/box_model.dart';
+import '../models/cabinet_model.dart';
 import '../providers/cabinet_provider.dart';
 import '../providers/auth_provider.dart';
 
-class AddEditBoxScreen extends StatefulWidget {
-  final BoxModel? box;
-  final String? cabinetId;
-
-  const AddEditBoxScreen({super.key, this.box, this.cabinetId});
+class AddEditCabinetScreen extends StatefulWidget {
+  final CabinetModel? cabinet;
+  const AddEditCabinetScreen({super.key, this.cabinet});
 
   @override
-  State<AddEditBoxScreen> createState() => _AddEditBoxScreenState();
+  State<AddEditCabinetScreen> createState() => _AddEditCabinetScreenState();
 }
 
-class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
-  final _formKey              = GlobalKey<FormState>();
-  final _nameController       = TextEditingController();
+class _AddEditCabinetScreenState extends State<AddEditCabinetScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController        = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _capacityController   = TextEditingController();
 
-  String? _selectedCabinetId;
-  String? _selectedType;
   String? _selectedIcon;
   String? _selectedColor;
-  bool _isLoading = false;
+  String? _selectedLocation;
+  bool _isFavorite = false;
+  bool _isLoading  = false;
+  XFile? _imageFile;
 
-  final List<String> _types  = ['Drawer','Shelf','Container','Hook','Tray','Bin'];
-  final List<String> _icons  = ['📦','🗄️','📁','🧺','🪣','📊','🗂️','📂'];
+  final List<String> _icons = [
+    '🗄️','📦','🏠','🛋️','🚪','🪑','🛏️','🧺',
+    '🏪','🏥','🧰','🪣','🗃️','📁','🏷️','🔒',
+  ];
+  final List<String> _locations = [
+    'Living Room','Kitchen','Bedroom','Bathroom',
+    'Garage','Office','Storage','Pantry','Closet','Other',
+  ];
   final List<String> _colors = [
     '#FF6B6B','#FFA94D','#FDCB6E','#00B894',
     '#4ECDC4','#45B7D1','#6C5CE7','#A29BFE',
+    '#FD79A8','#E17055','#00CEC9','#0984E3',
   ];
 
   @override
   void initState() {
     super.initState();
-    if (widget.box != null) {
-      final b = widget.box!;
-      _nameController.text        = b.name;
-      _descriptionController.text = b.description ?? '';
-      _selectedCabinetId          = b.cabinetId;
-      _selectedType               = b.type;
-      _selectedIcon               = b.icon;
-      _selectedColor              = b.color;
-      _capacityController.text    = b.capacity?.toString() ?? '';
+    if (widget.cabinet != null) {
+      final c = widget.cabinet!;
+      _nameController.text        = c.name;
+      _descriptionController.text = c.description ?? '';
+      _selectedIcon               = c.icon;
+      _selectedColor              = c.color;
+      _selectedLocation           = c.location;
+      _isFavorite                 = c.isFavorite;
     } else {
-      _selectedCabinetId = widget.cabinetId;
-      _selectedType  = _types.first;
       _selectedIcon  = _icons.first;
       _selectedColor = _colors[4];
     }
-    WidgetsBinding.instance.addPostFrameCallback(
-        (_) => context.read<CabinetProvider>().loadCabinets());
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
-    _capacityController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (image != null) setState(() => _imageFile = image);
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedCabinetId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a cabinet')));
-      return;
-    }
     setState(() => _isLoading = true);
     try {
       final userId = context.read<AuthProvider>().currentUser?.id ?? '';
-      final box = BoxModel(
-        id:          widget.box?.id,
+      final cabinet = CabinetModel(
+        id:          widget.cabinet?.id,
         name:        _nameController.text.trim(),
+        location:    _selectedLocation,
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
-        cabinetId:   _selectedCabinetId!,
-        type:        _selectedType ?? 'Drawer',
         icon:        _selectedIcon,
         color:       _selectedColor,
-        capacity:    _capacityController.text.trim().isEmpty
-            ? null
-            : int.tryParse(_capacityController.text),
-        createdAt:   widget.box?.createdAt ?? DateTime.now(),
+        photoUrl:    null,
+        isFavorite:  _isFavorite,
+        createdAt:   widget.cabinet?.createdAt ?? DateTime.now(),
         updatedAt:   DateTime.now(),
         userId:      userId,
       );
-      if (widget.box == null) {
-        await context.read<CabinetProvider>().addBox(box);
+      if (widget.cabinet == null) {
+        await context.read<CabinetProvider>().addCabinet(cabinet);
       } else {
-        await context.read<CabinetProvider>().updateBox(box);
+        await context.read<CabinetProvider>().updateCabinet(cabinet);
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -108,9 +107,9 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cabinets  = context.watch<CabinetProvider>().cabinets;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final isDark    = Theme.of(context).brightness == Brightness.dark;
+    final imageBg   = isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade100;
 
     Color previewColor;
     try {
@@ -123,7 +122,7 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.box == null ? 'Add Box / Shelf' : 'Edit Box / Shelf'),
+        title: Text(widget.cabinet == null ? 'Add Cabinet' : 'Edit Cabinet'),
         actions: [
           _isLoading
               ? const Padding(
@@ -149,42 +148,49 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Preview
-              Center(
+              // Image picker
+              GestureDetector(
+                onTap: _pickImage,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 12),
+                  height: 150,
+                  width: double.infinity,
                   decoration: BoxDecoration(
-                    color: previewColor
-                        .withValues(alpha: isDark ? 0.2 : 0.12),
-                    borderRadius: BorderRadius.circular(12),
+                    color: imageBg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                        color: isDark
+                            ? Colors.grey.shade700
+                            : Colors.grey.shade300),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_selectedIcon ?? '📦',
-                          style: const TextStyle(fontSize: 28)),
-                      const SizedBox(width: 10),
-                      Text(
-                        _nameController.text.isEmpty
-                            ? 'Box / Shelf Name'
-                            : _nameController.text,
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: textColor),
-                      ),
-                    ],
-                  ),
+                  child: _imageFile != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.file(File(_imageFile!.path),
+                              fit: BoxFit.cover))
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.add_photo_alternate,
+                                size: 40,
+                                color: isDark
+                                    ? Colors.grey.shade600
+                                    : Colors.grey.shade400),
+                            const SizedBox(height: 8),
+                            Text('Tap to add cabinet photo',
+                                style: TextStyle(
+                                    color: isDark
+                                        ? Colors.grey.shade500
+                                        : Colors.grey.shade600)),
+                          ],
+                        ),
                 ),
               ),
               const SizedBox(height: 20),
 
-              // Icon + Color
+              // Icon + Color row
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Icon
+                  // Icon picker
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,48 +201,61 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
                                 fontWeight: FontWeight.w600,
                                 color: textColor)),
                         const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _icons.map((icon) {
-                            final sel = _selectedIcon == icon;
-                            return GestureDetector(
-                              onTap: () =>
-                                  setState(() => _selectedIcon = icon),
-                              child: Container(
-                                width: 44, height: 44,
-                                decoration: BoxDecoration(
-                                  color: sel
-                                      ? const Color(0xFF4ECDC4)
-                                          .withValues(alpha: 0.2)
-                                      : (isDark
-                                          ? const Color(0xFF2D2D2D)
-                                          : Colors.white),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
+                        Container(
+                          height: 100,
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF2D2D2D)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: isDark
+                                    ? Colors.grey.shade700
+                                    : Colors.grey.shade300),
+                          ),
+                          child: GridView.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              crossAxisSpacing: 4,
+                              mainAxisSpacing: 4,
+                            ),
+                            itemCount: _icons.length,
+                            itemBuilder: (_, i) {
+                              final icon = _icons[i];
+                              final sel = _selectedIcon == icon;
+                              return GestureDetector(
+                                onTap: () =>
+                                    setState(() => _selectedIcon = icon),
+                                child: Container(
+                                  decoration: BoxDecoration(
                                     color: sel
                                         ? const Color(0xFF4ECDC4)
-                                        : (isDark
-                                            ? Colors.grey.shade700
-                                            : Colors.grey.shade300),
-                                    width: sel ? 2 : 1,
+                                            .withValues(alpha: 0.2)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: sel
+                                        ? Border.all(
+                                            color: const Color(0xFF4ECDC4),
+                                            width: 2)
+                                        : null,
+                                  ),
+                                  child: Center(
+                                    child: Text(icon,
+                                        style: const TextStyle(fontSize: 20)),
                                   ),
                                 ),
-                                child: Center(
-                                  child: Text(icon,
-                                      style:
-                                          const TextStyle(fontSize: 22)),
-                                ),
-                              ),
-                            );
-                          }).toList(),
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 16),
 
-                  // Color
+                  // Color picker
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -263,7 +282,8 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
                               onTap: () =>
                                   setState(() => _selectedColor = c),
                               child: Container(
-                                width: 34, height: 34,
+                                width: 34,
+                                height: 34,
                                 decoration: BoxDecoration(
                                   color: col,
                                   shape: BoxShape.circle,
@@ -274,7 +294,7 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
                                 ),
                                 child: sel
                                     ? const Icon(Icons.check,
-                                        color: Colors.white, size: 16)
+                                        color: Colors.white, size: 18)
                                     : null,
                               ),
                             );
@@ -285,6 +305,36 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+
+              // Preview
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: previewColor.withValues(alpha: isDark ? 0.2 : 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_selectedIcon ?? '🗄️',
+                          style: const TextStyle(fontSize: 28)),
+                      const SizedBox(width: 10),
+                      Text(
+                        _nameController.text.isEmpty
+                            ? 'Cabinet Name'
+                            : _nameController.text,
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: textColor),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 20),
 
               // Name
@@ -292,43 +342,28 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
                 controller: _nameController,
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
-                  labelText: 'Box / Shelf Name *',
-                  prefixIcon: Icon(Icons.inventory_2_outlined),
+                  labelText: 'Cabinet Name *',
+                  prefixIcon: Icon(Icons.cabin),
                 ),
                 validator: (v) =>
                     v == null || v.isEmpty ? 'Please enter a name' : null,
               ),
               const SizedBox(height: 12),
 
-              // Cabinet dropdown
+              // Location
               DropdownButtonFormField<String>(
-                value: _selectedCabinetId,
+                value: _selectedLocation,
                 decoration: const InputDecoration(
-                  labelText: 'Cabinet *',
-                  prefixIcon: Icon(Icons.cabin),
+                  labelText: 'Location',
+                  prefixIcon: Icon(Icons.location_on),
                 ),
                 items: [
                   const DropdownMenuItem(
-                      value: null, child: Text('Select cabinet')),
-                  ...cabinets.map((cab) =>
-                      DropdownMenuItem(value: cab.id, child: Text(cab.name))),
+                      value: null, child: Text('Select location')),
+                  ..._locations.map((l) =>
+                      DropdownMenuItem(value: l, child: Text(l))),
                 ],
-                onChanged: (v) => setState(() => _selectedCabinetId = v),
-                validator: (v) =>
-                    v == null ? 'Please select a cabinet' : null,
-              ),
-              const SizedBox(height: 12),
-
-              // Type dropdown
-              DropdownButtonFormField<String>(
-                value: _selectedType,
-                decoration: const InputDecoration(
-                  labelText: 'Type',
-                  prefixIcon: Icon(Icons.category_outlined),
-                ),
-                items: _types.map((t) =>
-                    DropdownMenuItem(value: t, child: Text(t))).toList(),
-                onChanged: (v) => setState(() => _selectedType = v),
+                onChanged: (v) => setState(() => _selectedLocation = v),
               ),
               const SizedBox(height: 12),
 
@@ -337,27 +372,27 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
                 controller: _descriptionController,
                 decoration: const InputDecoration(
                   labelText: 'Description',
-                  prefixIcon: Icon(Icons.description_outlined),
+                  prefixIcon: Icon(Icons.description),
                 ),
                 maxLines: 2,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-              // Capacity
-              TextFormField(
-                controller: _capacityController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Capacity (optional)',
-                  prefixIcon: Icon(Icons.numbers),
-                  hintText: 'Max number of items',
-                ),
-                validator: (v) {
-                  if (v != null && v.isNotEmpty && int.tryParse(v) == null) {
-                    return 'Must be a number';
-                  }
-                  return null;
-                },
+              // Favourite
+              Row(
+                children: [
+                  Icon(Icons.favorite_outline,
+                      color: textColor.withValues(alpha: 0.6)),
+                  const SizedBox(width: 12),
+                  Text('Mark as Favourite',
+                      style: TextStyle(fontSize: 16, color: textColor)),
+                  const Spacer(),
+                  Switch(
+                    value: _isFavorite,
+                    onChanged: (v) => setState(() => _isFavorite = v),
+                    activeColor: const Color(0xFF4ECDC4),
+                  ),
+                ],
               ),
               const SizedBox(height: 28),
 
@@ -366,7 +401,7 @@ class _AddEditBoxScreenState extends State<AddEditBoxScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _save,
                   child: Text(
-                    widget.box == null ? 'Add Box' : 'Update Box',
+                    widget.cabinet == null ? 'Add Cabinet' : 'Update Cabinet',
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.bold),
                   ),

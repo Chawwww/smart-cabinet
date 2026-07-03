@@ -1,145 +1,192 @@
 import 'package:flutter/material.dart';
 import '../models/item_model.dart';
 
+// SUPERVISOR REQ 5: Item images displayed directly for easier identification
 class ItemCard extends StatelessWidget {
   final ItemModel item;
   final VoidCallback onTap;
 
-  const ItemCard({
-    super.key,
-    required this.item,
-    required this.onTap,
-  });
+  const ItemCard({super.key, required this.item, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final isDark    = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? const Color(0xFF2D2D2D) : Colors.white;
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    final subColor  = textColor.withValues(alpha: 0.5);
+
+    Color accent;
+    try {
+      accent = item.color != null
+          ? Color(int.parse(item.color!.replaceFirst('#', '0xFF')))
+          : const Color(0xFF4ECDC4);
+    } catch (_) {
+      accent = const Color(0xFF4ECDC4);
+    }
+
+    final hasPhoto = item.imageUrls.isNotEmpty &&
+        item.imageUrls.first.isNotEmpty;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          color: cardColor,
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: Colors.black.withValues(
+                  alpha: isDark ? 0.3 : 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── TOP: photo or emoji ─────────────────────
             Expanded(
               flex: 6,
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: item.color != null
-                      ? Color(int.parse(item.color!.replaceFirst('#', '0xFF')))
-                          .withValues(alpha: 0.1)
-                      : const Color(0xFF4ECDC4).withValues(alpha: 0.1),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16),
+              child: Stack(
+                children: [
+                  // Photo or emoji background
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(14)),
+                    child: SizedBox.expand(
+                      child: hasPhoto
+                          ? Image.network(
+                              item.imageUrls.first,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _emojiBox(accent, isDark),
+                              loadingBuilder: (_, child, prog) {
+                                if (prog == null) return child;
+                                return _emojiBox(accent, isDark);
+                              },
+                            )
+                          : _emojiBox(accent, isDark),
+                    ),
                   ),
-                ),
-                child: Stack(
-                  children: [
-                    Center(
-                      child: Text(
-                        item.icon ?? '📦',
-                        style: const TextStyle(fontSize: 48),
+
+                  // Favourite heart
+                  if (item.isFavorite)
+                    Positioned(
+                      top: 6, left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.favorite,
+                            color: Colors.red, size: 12),
                       ),
                     ),
-                    if (item.hasExpiry || item.isLowStock)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: _buildExpiryBadge(),
-                      ),
-                    if (item.isFavorite)
-                      const Positioned(
-                        top: 8,
-                        left: 8,
-                        child: Icon(
-                          Icons.favorite,
-                          color: Colors.red,
-                          size: 20,
-                        ),
-                      ),
-                    if (item.status == 'taken')
-                      Positioned(
-                        bottom: 8,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Text(
-                            'TAKEN',
+
+                  // Expiry / stock badge
+                  Positioned(
+                    top: 6, right: 6,
+                    child: _badge(),
+                  ),
+
+                  // Taken ribbon
+                  if (item.status == 'taken')
+                    Positioned(
+                      bottom: 0, left: 0, right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        color: Colors.black.withValues(alpha: 0.55),
+                        child: const Text('TAKEN',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2)),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ),
+
+            // ── BOTTOM: info ────────────────────────────
             Expanded(
               flex: 4,
               child: Padding(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      item.name,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2D3436),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${item.quantity} ${item.unit}',
-                          style: TextStyle(
+                    // Name
+                    Text(item.name,
+                        style: TextStyle(
                             fontSize: 12,
-                            color: item.isLowStock
-                                ? Colors.orange
-                                : const Color(0xFF636E72),
-                            fontWeight: item.isLowStock
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+                            fontWeight: FontWeight.w700,
+                            color: textColor),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+
+                    // Brand (if available)
+                    if (item.brand != null && item.brand!.isNotEmpty)
+                      Text(item.brand!,
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: subColor,
+                              fontStyle: FontStyle.italic),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+
+                    // SUPERVISOR REQ 1: Quantity display with initial qty
+                    Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Quantity pill
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: item.isOutOfStock
+                                ? Colors.red.withValues(alpha: 0.12)
+                                : item.isLowStock
+                                    ? Colors.orange
+                                        .withValues(alpha: 0.12)
+                                    : accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${item.quantity}/${item.initialQuantity} ${item.unit}',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: item.isOutOfStock
+                                  ? Colors.red
+                                  : item.isLowStock
+                                      ? Colors.orange
+                                      : accent,
+                            ),
                           ),
                         ),
-                        if (item.hasExpiry)
+
+                        // Expiry days
+                        if (item.hasExpiry && item.daysLeftText.isNotEmpty)
                           Text(
-                            item.daysLeftText,
+                            item.isExpired
+                                ? 'EXP'
+                                : item.isExpiringSoon
+                                    ? item.daysLeftText
+                                        .replaceAll(' days left', 'd')
+                                        .replaceAll(' left', '')
+                                    : '',
                             style: TextStyle(
-                              fontSize: 10,
-                              color: item.expiryStatus == 'expired'
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: item.isExpired
                                   ? Colors.red
-                                  : item.expiryStatus == 'expiring_soon'
-                                      ? Colors.orange
-                                      : const Color(0xFF636E72),
+                                  : Colors.orange,
                             ),
                           ),
                       ],
@@ -154,38 +201,44 @@ class ItemCard extends StatelessWidget {
     );
   }
 
-  Widget _buildExpiryBadge() {
-    final status = item.expiryStatus;
-    Color color;
+  Widget _emojiBox(Color accent, bool isDark) => Container(
+        color: accent.withValues(alpha: isDark ? 0.18 : 0.1),
+        child: Center(
+          child: Text(item.icon ?? '📦',
+              style: const TextStyle(fontSize: 40)),
+        ),
+      );
+
+  Widget _badge() {
     String label;
-    
-    switch (status) {
-      case 'expired':
-        color = Colors.red;
-        label = 'EXPIRED';
-        break;
-      case 'expiring_soon':
-        color = Colors.orange;
-        label = 'SOON';
-        break;
-      default:
-        return const SizedBox.shrink();
+    Color color;
+    if (item.isExpired) {
+      label = 'EXP';
+      color = Colors.red;
+    } else if (item.isExpiringSoon) {
+      label = 'SOON';
+      color = Colors.orange;
+    } else if (item.isOutOfStock) {
+      label = 'EMPTY';
+      color = Colors.red;
+    } else if (item.isLowStock) {
+      label = 'LOW';
+      color = const Color(0xFFFDCB6E);
+    } else {
+      return const SizedBox.shrink();
     }
-    
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(5),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 8,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+      child: Text(label,
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 7,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5)),
     );
   }
 }

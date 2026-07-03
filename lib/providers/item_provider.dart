@@ -1,326 +1,236 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
-
 import '../models/item_model.dart';
 import '../services/firestore_service.dart';
 
 class ItemProvider extends ChangeNotifier {
-  final FirestoreService _firestoreService =
-      FirestoreService();
+  final FirestoreService _firestoreService = FirestoreService();
 
   List<ItemModel> _items = [];
-
   bool _isLoading = false;
-
   String? _error;
-
   StreamSubscription? _itemsSubscription;
 
-  // ==========================
-  // Getters
-  // ==========================
-
-  List<ItemModel> get items => _items;
-
-  bool get isLoading => _isLoading;
-
-  String? get error => _error;
-
-  int get totalItems => _items.length;
+  // ── Getters ──────────────────────────────────────────
+  List<ItemModel> get items      => _items;
+  bool get isLoading             => _isLoading;
+  String? get error              => _error;
+  int get totalItems             => _items.length;
 
   List<ItemModel> get favoriteItems =>
-      _items.where((item) => item.isFavorite).toList();
+      _items.where((i) => i.isFavorite).toList();
 
   List<ItemModel> get expiredItems =>
-      _items.where((item) => item.expiryStatus == 'expired').toList();
+      _items.where((i) => i.isExpired).toList();
 
+  // Only items expiring within 7 days but NOT yet expired
   List<ItemModel> get expiringSoonItems =>
-      _items
-          .where(
-            (item) =>
-                item.expiryStatus ==
-                'expiring_soon',
-          )
-          .toList();
+      _items.where((i) => i.isExpiringSoon && !i.isExpired).toList();
 
+  // Low stock but NOT out of stock
   List<ItemModel> get lowStockItems =>
-      _items.where((item) => item.isLowStock).toList();
+      _items.where((i) => i.isLowStock && !i.isOutOfStock).toList();
 
   List<ItemModel> get outOfStockItems =>
-      _items.where((item) => item.isOutOfStock).toList();
+      _items.where((i) => i.isOutOfStock).toList();
 
-  // ==========================
-  // Load Items
-  // ==========================
-
+  // ── Load Items ────────────────────────────────────────
+  // Guard: only start one stream. Call reloadItems() to force restart.
   void loadItems() {
+    if (_itemsSubscription != null) return;
     _setLoading(true);
 
-    _itemsSubscription?.cancel();
-
-    _itemsSubscription =
-        _firestoreService.getItems().listen(
+    _itemsSubscription = _firestoreService.getItems().listen(
       (items) {
         _items = items;
-
         _error = null;
-
         _setLoading(false);
       },
-      onError: (error) {
-        _error = error.toString();
-
+      onError: (e) {
+        _error = e.toString();
         _setLoading(false);
       },
     );
   }
 
-  // ==========================
-  // Add Item
-  // ==========================
-
-  Future<void> addItem(
-    ItemModel item,
-  ) async {
-    try {
-      _setLoading(true);
-
-      await _firestoreService.addItem(
-        item,
-      );
-
-      _error = null;
-    } catch (e) {
-      _error = e.toString();
-    }
-
-    _setLoading(false);
+  void reloadItems() {
+    _itemsSubscription?.cancel();
+    _itemsSubscription = null;
+    _items = [];
+    loadItems();
   }
 
-  // ==========================
-  // Update Item
-  // ==========================
-
-  Future<void> updateItem(
-    ItemModel item,
-  ) async {
+  // ── Add Item ──────────────────────────────────────────
+  Future<bool> addItem(ItemModel item) async {
     try {
-      _setLoading(true);
-
-      await _firestoreService.updateItem(
-        item,
-      );
-
+      await _firestoreService.addItem(item);
       _error = null;
+      return true;
     } catch (e) {
       _error = e.toString();
+      notifyListeners();
+      return false;
     }
-
-    _setLoading(false);
   }
 
-  // ==========================
-  // Delete Item
-  // ==========================
-
-  Future<void> deleteItem(
-    String itemId,
-  ) async {
+  // ── Update Item (optimistic) ──────────────────────────
+  Future<bool> updateItem(ItemModel item) async {
     try {
-      _setLoading(true);
-
-      await _firestoreService.deleteItem(
-        itemId,
-      );
-
+      // Update local state immediately for snappy UI
+      final idx = _items.indexWhere((i) => i.id == item.id);
+      if (idx != -1) {
+        _items[idx] = item;
+        notifyListeners();
+      }
+      await _firestoreService.updateItem(item);
       _error = null;
+      return true;
     } catch (e) {
       _error = e.toString();
+      reloadItems(); // roll back on error
+      return false;
     }
-
-    _setLoading(false);
   }
 
-  // ==========================
-  // Toggle Favorite
-  // ==========================
+  // ── Delete Item (optimistic) ──────────────────────────
+  Future<bool> deleteItem(String itemId) async {
+    try {
+      _items.removeWhere((i) => i.id == itemId);
+      notifyListeners();
+      await _firestoreService.deleteItem(itemId);
+      _error = null;
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      reloadItems();
+      return false;
+    }
+  }
 
-  Future<void> toggleFavorite(
-    ItemModel item,
-  ) async {
+  // ── Toggle Favourite ──────────────────────────────────
+  Future<void> toggleFavorite(ItemModel item) async {
     if (item.id == null) return;
-
-    final updatedItem = item.copyWith(
+    await updateItem(item.copyWith(
       isFavorite: !item.isFavorite,
       updatedAt: DateTime.now(),
-    );
-
-    await updateItem(
-      updatedItem,
-    );
+    ));
   }
 
-  // ==========================
-  // Search
-  // ==========================
+  // ── Record Withdrawal ─────────────────────────────────
+  // Supervisor requirement 2: record qty taken out with who/when/why
+  Future<bool> recordWithdrawal({
+    required ItemModel item,
+    required int qty,
+    required String takenBy,
+    String? note,
+  }) async {
+    if (qty <= 0 || qty > item.quantity) return false;
 
-  List<ItemModel> searchItems(
-    String query,
-  ) {
-    if (query.isEmpty) {
-      return [];
-    }
+    final now = DateTime.now();
+    final record = {
+      'qty':  qty,
+      'by':   takenBy,
+      'at':   now.toIso8601String(),
+      'note': note,
+    };
 
-    final search =
-        query.toLowerCase();
+    final newQty = item.quantity - qty;
+    final updated = item.copyWith(
+      quantity:          newQty,
+      status:            newQty == 0 ? 'taken' : 'inside',
+      takenCount:        item.takenCount + qty,
+      lastTakenBy:       takenBy,
+      lastTakenTime:     now,
+      withdrawalHistory: [...item.withdrawalHistory, record],
+      updatedAt:         now,
+    );
 
-    return _items.where(
-      (item) {
-        return item.name
-                .toLowerCase()
-                .contains(search) ||
-            item.description
-                    ?.toLowerCase()
-                    .contains(search) ==
-                true ||
-            item.tags.any(
-              (tag) => tag
-                  .toLowerCase()
-                  .contains(search),
-            );
-      },
-    ).toList();
+    return updateItem(updated);
   }
 
-  // ==========================
-  // Filters
-  // ==========================
+  // ── KEYWORD SEARCH ────────────────────────────────────
+  // Supervisor requirement 4:
+  // Partial/keyword search — "ca" matches "calcium", "cabinet key" etc.
+  // Searches: name, description, brand, note, tags
+  List<ItemModel> searchItems(String query) {
+    if (query.trim().isEmpty) return [];
+    final q = query.toLowerCase().trim();
+    return _items.where((item) {
+      return item.name.toLowerCase().contains(q) ||
+          (item.description?.toLowerCase().contains(q) ?? false) ||
+          (item.brand?.toLowerCase().contains(q) ?? false) ||
+          (item.note?.toLowerCase().contains(q) ?? false) ||
+          item.tags.any((t) => t.toLowerCase().contains(q));
+    }).toList();
+  }
 
+  // ── Filter Items ──────────────────────────────────────
   List<ItemModel> getFilteredItems({
     String? category,
     String? status,
     String? searchQuery,
   }) {
-    List<ItemModel> filtered =
-        List.from(_items);
+    List<ItemModel> result = List.from(_items);
 
-    if (category != null &&
-        category != 'All') {
-      filtered = filtered
-          .where(
-            (item) =>
-                item.categoryId ==
-                category,
-          )
-          .toList();
+    if (category != null && category != 'All') {
+      result = result.where((i) => i.categoryId == category).toList();
     }
 
-    if (status != null &&
-        status != 'All') {
-      if (status == 'expired') {
-        filtered = filtered
-            .where(
-              (item) =>
-                  item.expiryStatus ==
-                  'expired',
-            )
-            .toList();
-      } else {
-        filtered = filtered
-            .where(
-              (item) =>
-                  item.status ==
-                  status,
-            )
-            .toList();
+    if (status != null && status != 'All') {
+      switch (status) {
+        case 'expired':
+          result = result.where((i) => i.isExpired).toList();
+          break;
+        case 'expiring_soon':
+          result = result.where((i) => i.isExpiringSoon).toList();
+          break;
+        case 'low_stock':
+          result = result.where((i) => i.isLowStock).toList();
+          break;
+        default:
+          result = result.where((i) => i.status == status).toList();
       }
     }
 
-    if (searchQuery != null &&
-        searchQuery.isNotEmpty) {
-      final query =
-          searchQuery.toLowerCase();
-
-      filtered = filtered.where(
-        (item) {
-          return item.name
-                  .toLowerCase()
-                  .contains(query) ||
-              item.description
-                      ?.toLowerCase()
-                      .contains(query) ==
-                  true ||
-              item.tags.any(
-                (tag) => tag
-                    .toLowerCase()
-                    .contains(query),
-              );
-        },
-      ).toList();
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.toLowerCase().trim();
+      result = result.where((item) =>
+          item.name.toLowerCase().contains(q) ||
+          (item.brand?.toLowerCase().contains(q) ?? false) ||
+          item.tags.any((t) => t.toLowerCase().contains(q))).toList();
     }
 
-    return filtered;
+    return result;
   }
 
-  // ==========================
-  // Find Item
-  // ==========================
-
-  ItemModel? getItemById(
-    String id,
-  ) {
+  // ── Helpers ───────────────────────────────────────────
+  ItemModel? getItemById(String id) {
     try {
-      return _items.firstWhere(
-        (item) => item.id == id,
-      );
+      return _items.firstWhere((i) => i.id == id);
     } catch (_) {
       return null;
     }
   }
 
-  // ==========================
-  // Recent Items
-  // ==========================
-
-  List<ItemModel> getRecentItems({
-    int limit = 10,
-  }) {
-    final sorted =
-        List<ItemModel>.from(_items);
-
-    sorted.sort(
-      (a, b) =>
-          b.createdAt.compareTo(
-        a.createdAt,
-      ),
-    );
-
+  List<ItemModel> getRecentItems({int limit = 10}) {
+    final sorted = List<ItemModel>.from(_items)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return sorted.take(limit).toList();
   }
 
-  // ==========================
-  // Helpers
-  // ==========================
-
   void clearError() {
     _error = null;
-
     notifyListeners();
   }
 
-  void _setLoading(
-    bool value,
-  ) {
-    _isLoading = value;
-
+  void _setLoading(bool v) {
+    _isLoading = v;
     notifyListeners();
   }
 
   @override
   void dispose() {
     _itemsSubscription?.cancel();
-
     super.dispose();
   }
 }

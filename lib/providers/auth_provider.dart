@@ -31,6 +31,27 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ==========================
+  // Google Sign-In
+  // ==========================
+  Future<bool> signInWithGoogle() async {
+    _setLoading(true);
+    try {
+      _errorMessage = null;
+      final result = await _authService.signInWithGoogle();
+      if (result == null) return false; // user cancelled
+      final uid = result.user?.uid;
+      if (uid != null) await _loadUserData(uid);
+      return _isLoggedIn;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      notifyListeners();
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ==========================
   // Load User Data
   // ==========================
   Future<void> _loadUserData(String uid) async {
@@ -91,20 +112,16 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // ==========================
-  // Login — KEY FIX:
-  // Wait for user data to load BEFORE returning true,
-  // so the profile/menu shows correct info immediately on navigation.
+  // Login
   // ==========================
   Future<bool> login(String email, String password) async {
     try {
       _setLoading(true);
       _errorMessage = null;
-      final credential = await _authService.loginWithEmailAndPassword(email, password);
+      final credential =
+          await _authService.loginWithEmailAndPassword(email, password);
       final uid = credential.user?.uid;
-      if (uid != null) {
-        // Load Firestore user data synchronously before telling the UI we're done
-        await _loadUserData(uid);
-      }
+      if (uid != null) await _loadUserData(uid);
       return _isLoggedIn;
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
