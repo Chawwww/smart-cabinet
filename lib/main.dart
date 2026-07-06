@@ -1,3 +1,4 @@
+// lib/main.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -20,6 +21,7 @@ import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
+import 'screens/forgot_password_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/workflows_screen.dart';
 import 'screens/items_screen.dart';
@@ -31,6 +33,8 @@ import 'screens/profile_screen.dart';
 import 'screens/smart_cabinet_control_screen.dart';
 import 'screens/language_selector_screen.dart';
 import 'screens/medicine_info_screen.dart';
+import 'screens/share_cabinet_screen.dart';
+import 'screens/shared_cabinets_screen.dart';
 import 'themes/app_theme.dart';
 import 'services/notification_service.dart';
 import 'services/notification_manager.dart';
@@ -54,7 +58,7 @@ Future<void> _firebaseMessagingBackgroundHandler(
   await notifManager.handleFCMNotification(message);
 }
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase
@@ -62,13 +66,30 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Initialize Google Sign-In (skip on web)
+  debugPrint('✅ Firebase initialized');
+
+  // Enable Firestore offline persistence
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+  debugPrint('✅ Firestore offline persistence enabled');
+
+  // ✅ Listen to auth changes to clear data on logout
+  FirebaseAuth.instance.authStateChanges().listen((User? user) {
+    if (user == null) {
+      debugPrint('🔴 User logged out - data will be cleared');
+    }
+  });
+
+  // Initialize Google Sign-In
   if (!kIsWeb) {
     try {
-      await AuthService().initGoogleSignIn();
-      debugPrint("✅ Google Sign-In initialized");
+      final authService = AuthService();
+      await authService.initGoogleSignIn();
+      debugPrint('✅ Google Sign-In initialized');
     } catch (e) {
-      debugPrint("⚠️ Google Sign-In initialization error: $e");
+      debugPrint('⚠️ Google Sign-In initialization error: $e');
     }
   }
 
@@ -86,15 +107,16 @@ Future<void> main() async {
   await flutterLocalNotificationsPlugin.initialize(
     settings: initializationSettings,
     onDidReceiveNotificationResponse: (NotificationResponse response) {
-      debugPrint('Notification tapped: ${response.payload}');
+      debugPrint('🔔 Notification tapped: ${response.payload}');
       final payload = response.payload;
       if (payload != null && payload.isNotEmpty) {
         NavigationService.navigateTo('/notifications', arguments: payload);
       }
     },
   );
+  debugPrint('✅ Local notifications initialized');
 
-  // Initialize Firebase Messaging (skip on web)
+  // Initialize Firebase Messaging (FCM)
   if (!kIsWeb) {
     try {
       await NotificationService().requestPermissions();
@@ -118,25 +140,27 @@ Future<void> main() async {
       );
       
       String? token = await messaging.getToken();
-      debugPrint("🔑 FCM TOKEN = $token");
+      debugPrint('🔑 FCM TOKEN = $token');
       await _storeFCMToken(token);
       
+      debugPrint('✅ Firebase Messaging initialized');
     } catch (e) {
-      debugPrint("⚠️ FCM initialization error: $e");
+      debugPrint('⚠️ FCM initialization error: $e');
     }
   }
 
   // Initialize SharedPreferences
   final SharedPreferences prefs = await SharedPreferences.getInstance();
+  debugPrint('✅ SharedPreferences initialized');
 
-  // Initialize IoT Service (skip on web)
+  // Initialize IoT Service
   final IoTService iotService = IoTService();
   if (!kIsWeb) {
     try {
       await iotService.initialize();
-      debugPrint("✅ IoT Service initialized");
+      debugPrint('✅ IoT Service initialized');
     } catch (e) {
-      debugPrint("⚠️ IoT initialization error: $e");
+      debugPrint('⚠️ IoT initialization error: $e');
     }
   }
 
@@ -193,15 +217,12 @@ class MyApp extends StatelessWidget {
           title: AppConstants.appName,
           debugShowCheckedModeBanner: false,
           
-          // Navigation
           navigatorKey: NavigationService.navigatorKey,
           
-          // Theme
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: themeProvider.themeMode,
           
-          // Localization
           locale: languageProvider.locale,
           supportedLocales: LanguageProvider.supportedLocales,
           localizationsDelegates: const [
@@ -211,13 +232,12 @@ class MyApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
           
-          // Home Screen
           home: const SplashScreen(),
           
-          // Routes
           routes: {
             '/login': (_) => const LoginScreen(),
             '/register': (_) => const RegisterScreen(),
+            '/forgot-password': (_) => const ForgotPasswordScreen(),
             '/home': (_) => const HomeScreen(),
             '/workflows': (_) => const WorkflowsScreen(),
             '/items': (_) => const ItemsScreen(),
@@ -229,6 +249,27 @@ class MyApp extends StatelessWidget {
             '/cabinet': (_) => const SmartCabinetControlScreen(),
             '/language-selector': (_) => const LanguageSelectorScreen(),
             '/medicine-info': (_) => const MedicineInfoScreen(),
+            '/shared-cabinets': (_) => const SharedCabinetsScreen(),
+            '/share-cabinet': (_) => const ShareCabinetScreen(
+                  cabinetId: '',
+                  cabinetName: '',
+                ),
+          },
+          
+          onGenerateRoute: (settings) {
+            debugPrint('🔀 Route: ${settings.name}');
+            return null;
+          },
+          
+          onUnknownRoute: (settings) {
+            return MaterialPageRoute(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Page Not Found')),
+                body: const Center(
+                  child: Text('The page you are looking for does not exist.'),
+                ),
+              ),
+            );
           },
         );
       },

@@ -1,12 +1,16 @@
+// lib/screens/items_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/item_provider.dart';
 import '../providers/category_provider.dart';
+import '../providers/cabinet_provider.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/item_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_widget.dart';
 import 'item_detail_screen.dart';
 import 'add_edit_item_screen.dart';
+import 'share_cabinet_screen.dart';
 
 class ItemsScreen extends StatefulWidget {
   const ItemsScreen({super.key});
@@ -17,6 +21,7 @@ class ItemsScreen extends StatefulWidget {
 class _ItemsScreenState extends State<ItemsScreen> {
   String _selectedCategoryId = 'All';
   String _selectedStatus     = 'All';
+  String? _selectedCabinetId;
 
   @override
   void initState() {
@@ -24,6 +29,9 @@ class _ItemsScreenState extends State<ItemsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ItemProvider>().loadItems();
       context.read<CategoryProvider>().loadCategories();
+      context.read<CabinetProvider>()
+        ..loadCabinets()
+        ..loadBoxes();
     });
   }
 
@@ -31,6 +39,9 @@ class _ItemsScreenState extends State<ItemsScreen> {
   Widget build(BuildContext context) {
     final itemProvider     = context.watch<ItemProvider>();
     final categoryProvider = context.watch<CategoryProvider>();
+    final cabinetProvider  = context.watch<CabinetProvider>();
+    final authProvider     = context.watch<AuthProvider>();
+    
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).colorScheme.onSurface;
 
@@ -40,6 +51,11 @@ class _ItemsScreenState extends State<ItemsScreen> {
       category: _selectedCategoryId,
       status:   _selectedStatus,
     );
+
+    // Filter by cabinet if selected
+    final filteredItems = _selectedCabinetId != null
+        ? items.where((item) => item.cabinetId == _selectedCabinetId).toList()
+        : items;
 
     return Column(
       children: [
@@ -56,7 +72,6 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     fontWeight: FontWeight.w500),
               ),
               const Spacer(),
-              // FIX: + button here in the screen, not floating over search
               FilledButton.icon(
                 onPressed: () => Navigator.push(
                   context,
@@ -130,9 +145,59 @@ class _ItemsScreenState extends State<ItemsScreen> {
           ),
         ),
 
+        // ── Cabinet filter with Share button ──────────
+        if (cabinetProvider.accessibleCabinets.isNotEmpty)
+          SizedBox(
+            height: 48,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              children: [
+                _chip(context, 'All Cabinets', _selectedCabinetId == null,
+                    isDark, () => setState(() => _selectedCabinetId = null)),
+                ...cabinetProvider.accessibleCabinets.map((cabinet) {
+                  final isOwner = cabinet.userId == authProvider.userId;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _chip(
+                          context,
+                          '${cabinet.icon ?? '🗄️'} ${cabinet.name}',
+                          _selectedCabinetId == cabinet.id,
+                          isDark,
+                          () => setState(() => _selectedCabinetId = cabinet.id),
+                        ),
+                        // ✅ Share button next to cabinet chip (only for owner)
+                        if (isOwner)
+                          IconButton(
+                            icon: const Icon(Icons.share_outlined, 
+                                size: 14, color: Color(0xFF4ECDC4)),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ShareCabinetScreen(
+                                  cabinetId: cabinet.id!,
+                                  cabinetName: cabinet.name,
+                                ),
+                              ),
+                            ),
+                            tooltip: 'Share Cabinet',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+
         // ── Grid ──────────────────────────────────────
         Expanded(
-          child: items.isEmpty
+          child: filteredItems.isEmpty
               ? EmptyState(
                   icon: Icons.inventory_2_outlined,
                   title: 'Nothing here yet',
@@ -158,9 +223,9 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                   ),
-                  itemCount: items.length,
+                  itemCount: filteredItems.length,
                   itemBuilder: (context, index) {
-                    final item = items[index];
+                    final item = filteredItems[index];
                     return ItemCard(
                       item: item,
                       onTap: () => Navigator.push(

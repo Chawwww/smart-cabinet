@@ -1,3 +1,4 @@
+// lib/providers/language_provider.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -66,5 +67,11 @@ class LanguageProvider extends ChangeNotifier {
 
   bool isSelected(String languageCode) {
     return _currentLocale.languageCode == languageCode;
+  }
+
+  // ── Clear Data on Logout ───────────────────────────────
+  void clearData() {
+    // Language persists across logins
+    // No action needed
   }
 }

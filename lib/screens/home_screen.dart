@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -23,15 +24,27 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final List<Widget> _screens = const [
     WorkflowsScreen(),
-    ItemsScreen(),   // + button is INSIDE ItemsScreen header now
+    ItemsScreen(),
     SearchScreen(),
     NotificationsScreen(),
     MenuScreen(),
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // ✅ Refresh user data when home screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.isLoggedIn) {
+        authProvider.refreshUserData();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final authProvider  = context.watch<AuthProvider>();
+    final authProvider = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final user = authProvider.currentUser;
     final isDark = themeProvider.isDarkMode;
@@ -101,7 +114,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      // FIX: No floatingActionButton here at all — moved into ItemsScreen
       body: IndexedStack(index: _selectedIndex, children: _screens),
       bottomNavigationBar: BottomNavigation(
         currentIndex: _selectedIndex,

@@ -1,21 +1,26 @@
+// lib/providers/item_provider.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/item_model.dart';
 import '../services/firestore_service.dart';
 
 class ItemProvider extends ChangeNotifier {
   final FirestoreService _firestoreService = FirestoreService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   List<ItemModel> _items = [];
   bool _isLoading = false;
   String? _error;
   StreamSubscription? _itemsSubscription;
 
-  // ── Getters ──────────────────────────────────────────
-  List<ItemModel> get items      => _items;
-  bool get isLoading             => _isLoading;
-  String? get error              => _error;
-  int get totalItems             => _items.length;
+  // ── Getters ──────────────────────────────────────────────
+  List<ItemModel> get items => _items;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  int get totalItems => _items.length;
+
+  String get userId => _auth.currentUser?.uid ?? '';
 
   List<ItemModel> get favoriteItems =>
       _items.where((i) => i.isFavorite).toList();
@@ -23,19 +28,16 @@ class ItemProvider extends ChangeNotifier {
   List<ItemModel> get expiredItems =>
       _items.where((i) => i.isExpired).toList();
 
-  // Only items expiring within 7 days but NOT yet expired
   List<ItemModel> get expiringSoonItems =>
       _items.where((i) => i.isExpiringSoon && !i.isExpired).toList();
 
-  // Low stock but NOT out of stock
   List<ItemModel> get lowStockItems =>
       _items.where((i) => i.isLowStock && !i.isOutOfStock).toList();
 
   List<ItemModel> get outOfStockItems =>
       _items.where((i) => i.isOutOfStock).toList();
 
-  // ── Load Items ────────────────────────────────────────
-  // Guard: only start one stream. Call reloadItems() to force restart.
+  // ── Load Items ──────────────────────────────────────────
   void loadItems() {
     if (_itemsSubscription != null) return;
     _setLoading(true);
@@ -45,6 +47,7 @@ class ItemProvider extends ChangeNotifier {
         _items = items;
         _error = null;
         _setLoading(false);
+        debugPrint('📦 Items loaded: ${items.length}');
       },
       onError: (e) {
         _error = e.toString();
@@ -60,7 +63,18 @@ class ItemProvider extends ChangeNotifier {
     loadItems();
   }
 
-  // ── Add Item ──────────────────────────────────────────
+  // ✅ Clear Data on Logout
+  void clearData() {
+    _itemsSubscription?.cancel();
+    _itemsSubscription = null;
+    _items = [];
+    _error = null;
+    _isLoading = false;
+    notifyListeners();
+    debugPrint('🧹 ItemProvider data cleared');
+  }
+
+  // ── Add Item ────────────────────────────────────────────
   Future<bool> addItem(ItemModel item) async {
     try {
       await _firestoreService.addItem(item);
@@ -73,10 +87,9 @@ class ItemProvider extends ChangeNotifier {
     }
   }
 
-  // ── Update Item (optimistic) ──────────────────────────
+  // ── Update Item ─────────────────────────────────────────
   Future<bool> updateItem(ItemModel item) async {
     try {
-      // Update local state immediately for snappy UI
       final idx = _items.indexWhere((i) => i.id == item.id);
       if (idx != -1) {
         _items[idx] = item;
@@ -87,12 +100,12 @@ class ItemProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = e.toString();
-      reloadItems(); // roll back on error
+      reloadItems();
       return false;
     }
   }
 
-  // ── Delete Item (optimistic) ──────────────────────────
+  // ── Delete Item ─────────────────────────────────────────
   Future<bool> deleteItem(String itemId) async {
     try {
       _items.removeWhere((i) => i.id == itemId);
@@ -107,7 +120,7 @@ class ItemProvider extends ChangeNotifier {
     }
   }
 
-  // ── Toggle Favourite ──────────────────────────────────
+  // ── Toggle Favourite ────────────────────────────────────
   Future<void> toggleFavorite(ItemModel item) async {
     if (item.id == null) return;
     await updateItem(item.copyWith(
@@ -116,8 +129,7 @@ class ItemProvider extends ChangeNotifier {
     ));
   }
 
-  // ── Record Withdrawal ─────────────────────────────────
-  // Supervisor requirement 2: record qty taken out with who/when/why
+  // ── Record Withdrawal ───────────────────────────────────
   Future<bool> recordWithdrawal({
     required ItemModel item,
     required int qty,
@@ -128,30 +140,38 @@ class ItemProvider extends ChangeNotifier {
 
     final now = DateTime.now();
     final record = {
-      'qty':  qty,
-      'by':   takenBy,
-      'at':   now.toIso8601String(),
+      'qty': qty,
+      'by': takenBy,
+      'at': now.toIso8601String(),
       'note': note,
     };
 
     final newQty = item.quantity - qty;
     final updated = item.copyWith(
-      quantity:          newQty,
-      status:            newQty == 0 ? 'taken' : 'inside',
-      takenCount:        item.takenCount + qty,
-      lastTakenBy:       takenBy,
-      lastTakenTime:     now,
+      quantity: newQty,
+      status: newQty == 0 ? 'taken' : 'inside',
+      takenCount: item.takenCount + qty,
+      lastTakenBy: takenBy,
+      lastTakenTime: now,
       withdrawalHistory: [...item.withdrawalHistory, record],
-      updatedAt:         now,
+      updatedAt: now,
     );
 
     return updateItem(updated);
   }
 
-  // ── KEYWORD SEARCH ────────────────────────────────────
-  // Supervisor requirement 4:
-  // Partial/keyword search — "ca" matches "calcium", "cabinet key" etc.
-  // Searches: name, description, brand, note, tags
+  // ── Return Item ─────────────────────────────────────────
+  Future<bool> returnItem(ItemModel item) async {
+    final now = DateTime.now();
+    final updated = item.copyWith(
+      quantity: item.quantity + 1,
+      status: 'inside',
+      updatedAt: now,
+    );
+    return updateItem(updated);
+  }
+
+  // ── Search ──────────────────────────────────────────────
   List<ItemModel> searchItems(String query) {
     if (query.trim().isEmpty) return [];
     final q = query.toLowerCase().trim();
@@ -164,7 +184,7 @@ class ItemProvider extends ChangeNotifier {
     }).toList();
   }
 
-  // ── Filter Items ──────────────────────────────────────
+  // ── Filter Items ────────────────────────────────────────
   List<ItemModel> getFilteredItems({
     String? category,
     String? status,
@@ -203,7 +223,7 @@ class ItemProvider extends ChangeNotifier {
     return result;
   }
 
-  // ── Helpers ───────────────────────────────────────────
+  // ── Get Item by ID ──────────────────────────────────────
   ItemModel? getItemById(String id) {
     try {
       return _items.firstWhere((i) => i.id == id);
@@ -212,12 +232,19 @@ class ItemProvider extends ChangeNotifier {
     }
   }
 
+  // ── Get Recent Items ────────────────────────────────────
   List<ItemModel> getRecentItems({int limit = 10}) {
     final sorted = List<ItemModel>.from(_items)
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return sorted.take(limit).toList();
   }
 
+  // ── Get Items by Cabinet ───────────────────────────────
+  List<ItemModel> getItemsByCabinet(String cabinetId) {
+    return _items.where((item) => item.cabinetId == cabinetId).toList();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────
   void clearError() {
     _error = null;
     notifyListeners();

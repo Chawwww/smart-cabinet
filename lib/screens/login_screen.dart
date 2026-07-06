@@ -1,8 +1,13 @@
+// lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/item_provider.dart';
+import '../providers/category_provider.dart';
+import '../providers/cabinet_provider.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,8 +20,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  
   bool _obscurePassword = true;
   bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -25,61 +32,107 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // ── Navigate to home, clearing all previous routes ──
-  void _goHome() => Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-        (route) => false,
-      );
-
-  // ── Show error snackbar ──────────────────────────────
-  void _showError(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: Colors.red),
-      );
-
-  // ── Email / Password login ───────────────────────────
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
-    try {
-      final auth = context.read<AuthProvider>();
-      final ok = await auth.login(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
-      if (!mounted) return;
-      if (ok) {
-        _goHome();
-      } else {
-        _showError(auth.errorMessage ?? 'Invalid email or password');
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.login(
+      email: _emailController.text.trim(),
+      password: _passwordController.text.trim(),
+    );
+
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (success) {
+      // ✅ Reload data after login
+      _reloadData();
+      _navigateToHome();
+    } else {
+      setState(() => _errorMessage = authProvider.errorMessage);
+      _showErrorSnackBar(_errorMessage!);
     }
   }
 
-  // ── Google login ─────────────────────────────────────
-  Future<void> _googleLogin() async {
+  void _reloadData() {
+    context.read<ItemProvider>().reloadItems();
+    context.read<CategoryProvider>().loadCategories();
+    context.read<CabinetProvider>()
+      ..reloadCabinets()
+      ..reloadBoxes();
+  }
+
+  void _navigateToHome() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      (route) => false,
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _handleGoogleSignIn() async {
     setState(() => _isLoading = true);
-    try {
-      final auth = context.read<AuthProvider>();
-      final ok = await auth.signInWithGoogle();
-      if (!mounted) return;
-      if (ok) {
-        _goHome();
-      } else if (auth.errorMessage != null) {
-        _showError(auth.errorMessage!);
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.signInWithGoogle();
+    
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    
+    if (success) {
+      // ✅ Force reload data after Google Sign-In
+      await authProvider.refreshUserData();
+      _reloadData();
+      _navigateToHome();
+    }
+  }
+
+  Future<void> _handleGuestSignIn() async {
+    setState(() => _isLoading = true);
+    
+    final authProvider = context.read<AuthProvider>();
+    final success = await authProvider.signInAnonymously();
+    
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    
+    if (success) {
+      await authProvider.refreshUserData();
+      _reloadData();
+      _navigateToHome();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = textColor.withValues(alpha: 0.55);
+
+    if (authProvider.isLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _reloadData();
+        _navigateToHome();
+      });
+      return const SizedBox.shrink();
+    }
 
     return Scaffold(
       body: SafeArea(
@@ -91,8 +144,6 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 40),
-
-                // ── Logo ───────────────────────────────
                 Center(
                   child: Container(
                     width: 80,
@@ -103,18 +154,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Icon(Icons.cabin,
-                        color: Colors.white, size: 40),
+                    child: const Icon(Icons.cabin, color: Colors.white, size: 40),
                   ),
                 ),
                 const SizedBox(height: 24),
-
                 Text(
                   'Welcome Back!',
                   style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: textColor),
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
@@ -125,133 +175,143 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // ── Email field ────────────────────────
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
+                  textInputAction: TextInputAction.next,
+                  enabled: !_isLoading,
+                  decoration: InputDecoration(
                     labelText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: const OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                    filled: true,
+                    fillColor: isDark ? const Color(0xFF2D2D2D) : Colors.white,
                   ),
                   validator: (v) {
                     if (v == null || v.isEmpty) return 'Please enter your email';
-                    if (!v.contains('@')) return 'Please enter a valid email';
+                    if (!v.contains('@') || !v.contains('.')) {
+                      return 'Please enter a valid email';
+                    }
                     return null;
                   },
                 ),
                 const SizedBox(height: 16),
 
-                // ── Password field ─────────────────────
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  textInputAction: TextInputAction.done,
+                  enabled: !_isLoading,
+                  onFieldSubmitted: (_) => _login(),
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
-                      icon: Icon(_obscurePassword
-                          ? Icons.visibility_off
+                      icon: Icon(_obscurePassword 
+                          ? Icons.visibility_off 
                           : Icons.visibility),
                       onPressed: () => setState(
                           () => _obscurePassword = !_obscurePassword),
                     ),
-                    border: const OutlineInputBorder(),
+                    border: const OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                    filled: true,
+                    fillColor: isDark ? const Color(0xFF2D2D2D) : Colors.white,
                   ),
                   validator: (v) {
-                    if (v == null || v.isEmpty)
-                      return 'Please enter your password';
-                    if (v.length < 6)
-                      return 'Password must be at least 6 characters';
+                    if (v == null || v.isEmpty) return 'Please enter your password';
+                    if (v.length < 6) return 'Password must be at least 6 characters';
                     return null;
                   },
                 ),
                 const SizedBox(height: 8),
 
-                // ── Forgot password ────────────────────
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () async {
-                      final email = _emailController.text.trim();
-                      if (email.isEmpty || !email.contains('@')) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text('Enter your email above first')));
-                        return;
-                      }
-                      await context
-                          .read<AuthProvider>()
-                          .resetPassword(email);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Password reset email sent!')),
-                        );
-                      }
-                    },
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ForgotPasswordScreen(),
+                      ),
+                    ),
                     child: const Text('Forgot Password?'),
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                // ── Sign In button ─────────────────────
                 _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton(
                         onPressed: _login,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF4ECDC4),
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                         child: const Text('Sign In',
                             style: TextStyle(fontSize: 16)),
                       ),
+                const SizedBox(height: 16),
 
-                const SizedBox(height: 20),
-
-                // ── OR divider ─────────────────────────
                 Row(children: [
                   const Expanded(child: Divider()),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('or sign in with',
+                    child: Text('or continue with',
                         style: TextStyle(color: subColor, fontSize: 13)),
                   ),
                   const Expanded(child: Divider()),
                 ]),
                 const SizedBox(height: 16),
 
-                // ── Google button ──────────────────────
+                // ✅ Google Sign-In Button with fixed handler
                 OutlinedButton(
-                  onPressed: _isLoading ? null : _googleLogin,
+                  onPressed: _isLoading ? null : _handleGoogleSignIn,
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 13),
-                    side: BorderSide(
-                        color: Theme.of(context).dividerColor),
+                    side: BorderSide(color: const Color(0xFF4ECDC4).withValues(alpha: 0.5)),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Google coloured "G" icon
-                      _GoogleIcon(),
+                      const Icon(Icons.g_mobiledata, color: Colors.red, size: 24),
                       const SizedBox(width: 12),
-                      const Text(
-                        'Continue with Google',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w500),
-                      ),
+                      const Text('Continue with Google',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // ✅ Guest Sign-In Button with fixed handler
+                OutlinedButton(
+                  onPressed: _isLoading ? null : _handleGuestSignIn,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    side: BorderSide(color: const Color(0xFF4ECDC4).withValues(alpha: 0.5)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.person_outline, color: Color(0xFF4ECDC4), size: 24),
+                      const SizedBox(width: 12),
+                      const Text('Continue as Guest',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
                     ],
                   ),
                 ),
 
                 const SizedBox(height: 20),
 
-                // ── Sign up link ───────────────────────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -263,40 +323,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         MaterialPageRoute(
                             builder: (_) => const RegisterScreen()),
                       ),
-                      child: const Text('Sign Up'),
+                      child: const Text('Sign Up',
+                          style: TextStyle(
+                              color: Color(0xFF4ECDC4),
+                              fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-
-                // ── Guest divider ──────────────────────
-                Row(children: [
-                  const Expanded(child: Divider()),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('or continue as guest',
-                        style: TextStyle(color: subColor)),
-                  ),
-                  const Expanded(child: Divider()),
-                ]),
-                const SizedBox(height: 16),
-
-                // ── Guest button ───────────────────────
-                OutlinedButton(
-                  onPressed: () => Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const HomeScreen()),
-                    (route) => false,
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF4ECDC4),
-                    side: const BorderSide(color: Color(0xFF4ECDC4)),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                  child: const Text('Continue as Guest'),
-                ),
-
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -304,57 +338,4 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-}
-
-// ── Google coloured "G" icon ──────────────────────────────
-class _GoogleIcon extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 24,
-      height: 24,
-      child: CustomPaint(painter: _GooglePainter()),
-    );
-  }
-}
-
-class _GooglePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double cx = size.width / 2;
-    final double cy = size.height / 2;
-    final double r = size.width / 2;
-    final double stroke = size.width * 0.17;
-
-    Paint arc(Color color) => Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.butt;
-
-    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.78);
-
-    // Red (top-right)
-    canvas.drawArc(rect, -1.38, 2.15, false, arc(const Color(0xFFEA4335)));
-    // Blue (top-left)
-    canvas.drawArc(rect, -3.55, 1.10, false, arc(const Color(0xFF4285F4)));
-    // Yellow (bottom-right)
-    canvas.drawArc(rect, 0.75, 1.10, false, arc(const Color(0xFFFBBC05)));
-    // Green (bottom-left)
-    canvas.drawArc(rect, 1.82, 0.82, false, arc(const Color(0xFF34A853)));
-
-    // Blue horizontal bar
-    canvas.drawRect(
-      Rect.fromLTWH(
-        cx - 1,
-        cy - stroke / 2,
-        r * 0.78 + stroke / 2 + 1,
-        stroke,
-      ),
-      Paint()..color = const Color(0xFF4285F4),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
 }

@@ -1,13 +1,14 @@
+// lib/screens/menu_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
-import '../providers/language_provider.dart'; // ✅ ADDED
+import '../providers/language_provider.dart';
 import '../providers/item_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/cabinet_provider.dart';
-import '../l10n/app_localizations.dart'; // ✅ ADDED
+import '../l10n/app_localizations.dart';
 
 import 'profile_screen.dart';
 import 'login_screen.dart';
@@ -17,14 +18,31 @@ import 'ai_chat_screen.dart';
 import 'custom_fields_screen.dart';
 import 'help_support_screen.dart';
 import 'medicine_info_screen.dart';
-import 'language_selector_screen.dart'; // ✅ ADDED
+import 'language_selector_screen.dart';
+import 'shared_cabinets_screen.dart';
 
-class MenuScreen extends StatelessWidget {
+class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
+
+  @override
+  State<MenuScreen> createState() => _MenuScreenState();
+}
+
+class _MenuScreenState extends State<MenuScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = context.read<AuthProvider>();
+      if (authProvider.isLoggedIn) {
+        authProvider.refreshUserData();
+      }
+    });
+  }
 
   // ── Sync ─────────────────────────────────────────────
   Future<void> _syncInventory(BuildContext context) async {
-    context.read<ItemProvider>().loadItems();
+    context.read<ItemProvider>().reloadItems();
     context.read<CategoryProvider>().loadCategories();
     context.read<CabinetProvider>()
       ..loadCabinets()
@@ -162,14 +180,18 @@ class MenuScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider  = context.watch<AuthProvider>();
+    final authProvider = context.watch<AuthProvider>();
     final themeProvider = context.watch<ThemeProvider>();
-    final languageProvider = context.watch<LanguageProvider>(); // ✅ ADDED
+    final languageProvider = context.watch<LanguageProvider>();
+    final cabinetProvider = context.watch<CabinetProvider>();
     final user = authProvider.currentUser;
-    final appLocalizations = AppLocalizations.of(context)!; // ✅ ADDED
+    final appLocalizations = AppLocalizations.of(context)!;
 
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.55);
+    final subColor = textColor.withValues(alpha: 0.55);
+
+    debugPrint('🔍 Menu Screen - isLoggedIn: ${authProvider.isLoggedIn}');
+    debugPrint('🔍 Menu Screen - user: ${user?.name}, ${user?.email}');
 
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
@@ -196,7 +218,9 @@ class MenuScreen extends StatelessWidget {
                       child: Text(
                         user != null && user.name.isNotEmpty
                             ? user.name[0].toUpperCase()
-                            : 'G',
+                            : authProvider.isLoggedIn 
+                                ? 'U'
+                                : 'G',
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 24,
@@ -209,14 +233,26 @@ class MenuScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(user?.name ?? 'Guest User',
+                        Text(
+                          user?.name ?? (authProvider.isLoggedIn ? 'User' : 'Guest User'),
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: textColor),
+                        ),
+                        Text(
+                          user?.email ?? (authProvider.isLoggedIn ? 'Logged in' : 'Not logged in'),
+                          style: TextStyle(
+                              fontSize: 14, color: subColor),
+                        ),
+                        if (authProvider.isLoggedIn && user?.avatar != null)
+                          Text(
+                            '✓ Google Account',
                             style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: textColor)),
-                        Text(user?.email ?? 'Not logged in',
-                            style: TextStyle(
-                                fontSize: 14, color: subColor)),
+                                fontSize: 12, 
+                                color: const Color(0xFF4ECDC4),
+                                fontWeight: FontWeight.w500),
+                          ),
                       ],
                     ),
                   ),
@@ -267,9 +303,6 @@ class MenuScreen extends StatelessWidget {
                   MaterialPageRoute(
                       builder: (_) => const AIChatScreen()))),
 
-          // ════════════════════════════════════════════════
-          // MEDICINE INFO MENU ITEM
-          // ════════════════════════════════════════════════
           _item(context, Icons.medication_outlined, appLocalizations.medicineInfo,
               badge: '💊',
               onTap: () => Navigator.push(
@@ -300,11 +333,23 @@ class MenuScreen extends StatelessWidget {
                   MaterialPageRoute(
                       builder: (_) => const HelpSupportScreen()))),
 
+          // ── ✅ SHARED CABINETS SECTION ──────────────
+          _item(context, Icons.people_outline, 'Shared Cabinets',
+              subtitle: '${cabinetProvider.sharedCabinets.length} cabinets shared with you',
+              badge: cabinetProvider.sharedCabinets.isNotEmpty 
+                  ? '${cabinetProvider.sharedCabinets.length}' 
+                  : null,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SharedCabinetsScreen(),
+                ),
+              ),
+          ),
+
           const Divider(),
 
-          // ════════════════════════════════════════════════
-          // ✅ LANGUAGE SELECTOR - ADDED HERE
-          // ════════════════════════════════════════════════
+          // ── Language Selector ──────────────────────
           _item(
             context, 
             Icons.language, 
@@ -363,7 +408,7 @@ class MenuScreen extends StatelessWidget {
     VoidCallback? onTap,
   }) {
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.4);
+    final subColor = textColor.withValues(alpha: 0.4);
 
     return ListTile(
       leading:

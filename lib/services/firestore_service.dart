@@ -1,3 +1,4 @@
+// lib/services/firestore_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -7,43 +8,32 @@ import '../models/cabinet_model.dart';
 import '../models/box_model.dart';
 
 class FirestoreService {
-  static final FirestoreService _instance =
-      FirestoreService._internal();
-
+  static final FirestoreService _instance = FirestoreService._internal();
   factory FirestoreService() => _instance;
-
   FirestoreService._internal();
 
-  final FirebaseFirestore _firestore =
-      FirebaseFirestore.instance;
-
-  final FirebaseAuth _auth =
-      FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   String get userId {
     final user = _auth.currentUser;
-
     if (user == null) {
       throw Exception("User not logged in.");
     }
-
     return user.uid;
   }
 
-  // ==========================
+  // ════════════════════════════════════════════════════════
   // ITEM CRUD
-  // ==========================
+  // ════════════════════════════════════════════════════════
 
   Future<String> addItem(ItemModel item) async {
     final docRef = _firestore.collection('items').doc();
-
     final itemWithId = item.copyWith(
       id: docRef.id,
       userId: userId,
     );
-
     await docRef.set(itemWithId.toFirestore());
-
     return docRef.id;
   }
 
@@ -51,7 +41,6 @@ class FirestoreService {
     if (item.id == null) {
       throw Exception("Item ID is null.");
     }
-
     await _firestore
         .collection('items')
         .doc(item.id)
@@ -77,9 +66,7 @@ class FirestoreService {
         );
   }
 
-  Future<ItemModel?> findItemByName(
-    String itemName,
-  ) async {
+  Future<ItemModel?> findItemByName(String itemName) async {
     final snapshot = await _firestore
         .collection('items')
         .where('userId', isEqualTo: userId)
@@ -90,15 +77,10 @@ class FirestoreService {
     if (snapshot.docs.isEmpty) {
       return null;
     }
-
-    return ItemModel.fromFirestore(
-      snapshot.docs.first,
-    );
+    return ItemModel.fromFirestore(snapshot.docs.first);
   }
 
-  Stream<List<ItemModel>> getItemsByBox(
-    String boxId,
-  ) {
+  Stream<List<ItemModel>> getItemsByBox(String boxId) {
     return _firestore
         .collection('items')
         .where('userId', isEqualTo: userId)
@@ -111,9 +93,7 @@ class FirestoreService {
         );
   }
 
-  Stream<List<ItemModel>> getItemsByCabinet(
-    String cabinetId,
-  ) {
+  Stream<List<ItemModel>> getItemsByCabinet(String cabinetId) {
     return _firestore
         .collection('items')
         .where('userId', isEqualTo: userId)
@@ -126,42 +106,31 @@ class FirestoreService {
         );
   }
 
-  // ==========================
+  // ════════════════════════════════════════════════════════
   // CATEGORY CRUD
-  // ==========================
+  // ════════════════════════════════════════════════════════
 
-  Future<String> addCategory(
-    CategoryModel category,
-  ) async {
-    final docRef =
-        _firestore.collection('categories').doc();
-
+  Future<String> addCategory(CategoryModel category) async {
+    final docRef = _firestore.collection('categories').doc();
     final categoryWithId = category.copyWith(
       id: docRef.id,
       userId: userId,
     );
-
     await docRef.set(categoryWithId.toFirestore());
-
     return docRef.id;
   }
 
-  Future<void> updateCategory(
-    CategoryModel category,
-  ) async {
+  Future<void> updateCategory(CategoryModel category) async {
     if (category.id == null) {
       throw Exception("Category ID is null.");
     }
-
     await _firestore
         .collection('categories')
         .doc(category.id)
         .update(category.toFirestore());
   }
 
-  Future<void> deleteCategory(
-    String categoryId,
-  ) async {
+  Future<void> deleteCategory(String categoryId) async {
     final batch = _firestore.batch();
 
     final items = await _firestore
@@ -175,9 +144,7 @@ class FirestoreService {
     }
 
     batch.delete(
-      _firestore.collection('categories').doc(
-            categoryId,
-          ),
+      _firestore.collection('categories').doc(categoryId),
     );
 
     await batch.commit();
@@ -195,42 +162,31 @@ class FirestoreService {
         );
   }
 
-  // ==========================
+  // ════════════════════════════════════════════════════════
   // CABINET CRUD
-  // ==========================
+  // ════════════════════════════════════════════════════════
 
-  Future<String> addCabinet(
-    CabinetModel cabinet,
-  ) async {
-    final docRef =
-        _firestore.collection('cabinets').doc();
-
+  Future<String> addCabinet(CabinetModel cabinet) async {
+    final docRef = _firestore.collection('cabinets').doc();
     final cabinetWithId = cabinet.copyWith(
       id: docRef.id,
       userId: userId,
     );
-
     await docRef.set(cabinetWithId.toFirestore());
-
     return docRef.id;
   }
 
-  Future<void> updateCabinet(
-    CabinetModel cabinet,
-  ) async {
+  Future<void> updateCabinet(CabinetModel cabinet) async {
     if (cabinet.id == null) {
       throw Exception("Cabinet ID is null.");
     }
-
     await _firestore
         .collection('cabinets')
         .doc(cabinet.id)
         .update(cabinet.toFirestore());
   }
 
-  Future<void> deleteCabinet(
-    String cabinetId,
-  ) async {
+  Future<void> deleteCabinet(String cabinetId) async {
     final batch = _firestore.batch();
 
     final boxes = await _firestore
@@ -249,14 +205,11 @@ class FirestoreService {
       for (final item in items.docs) {
         batch.delete(item.reference);
       }
-
       batch.delete(boxDoc.reference);
     }
 
     batch.delete(
-      _firestore.collection('cabinets').doc(
-            cabinetId,
-          ),
+      _firestore.collection('cabinets').doc(cabinetId),
     );
 
     await batch.commit();
@@ -274,20 +227,17 @@ class FirestoreService {
         );
   }
 
-  // ==========================
+  // ════════════════════════════════════════════════════════
   // BOX CRUD
-  // ==========================
+  // ════════════════════════════════════════════════════════
 
   Future<String> addBox(BoxModel box) async {
     final docRef = _firestore.collection('boxes').doc();
-
     final boxWithId = box.copyWith(
       id: docRef.id,
       userId: userId,
     );
-
     await docRef.set(boxWithId.toFirestore());
-
     return docRef.id;
   }
 
@@ -295,7 +245,6 @@ class FirestoreService {
     if (box.id == null) {
       throw Exception("Box ID is null.");
     }
-
     await _firestore
         .collection('boxes')
         .doc(box.id)
@@ -328,35 +277,34 @@ class FirestoreService {
         .where('userId', isEqualTo: userId)
         .snapshots()
         .map(
-          (snapshot) =>
-              snapshot.docs.map(BoxModel.fromFirestore).toList(),
+          (snapshot) => snapshot.docs
+              .map(BoxModel.fromFirestore)
+              .toList(),
         );
   }
 
-  Stream<List<BoxModel>> getBoxesByCabinet(
-    String cabinetId,
-  ) {
+  Stream<List<BoxModel>> getBoxesByCabinet(String cabinetId) {
     return _firestore
         .collection('boxes')
         .where('userId', isEqualTo: userId)
         .where('cabinetId', isEqualTo: cabinetId)
         .snapshots()
         .map(
-          (snapshot) =>
-              snapshot.docs.map(BoxModel.fromFirestore).toList(),
+          (snapshot) => snapshot.docs
+              .map(BoxModel.fromFirestore)
+              .toList(),
         );
   }
 
-  // ==========================
+  // ════════════════════════════════════════════════════════
   // DASHBOARD STATISTICS
-  // ==========================
+  // ════════════════════════════════════════════════════════
 
   Future<int> getTotalItemsCount() async {
     final snapshot = await _firestore
         .collection('items')
         .where('userId', isEqualTo: userId)
         .get();
-
     return snapshot.size;
   }
 
@@ -365,7 +313,6 @@ class FirestoreService {
         .collection('cabinets')
         .where('userId', isEqualTo: userId)
         .get();
-
     return snapshot.size;
   }
 
@@ -374,7 +321,6 @@ class FirestoreService {
         .collection('categories')
         .where('userId', isEqualTo: userId)
         .get();
-
     return snapshot.size;
   }
 }

@@ -1,7 +1,11 @@
+// lib/screens/splash_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/item_provider.dart';
+import '../providers/category_provider.dart';
+import '../providers/cabinet_provider.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
@@ -16,36 +20,57 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _navigateToNextScreen();
+    _initializeApp();
   }
 
-  Future<void> _navigateToNextScreen() async {
+  Future<void> _initializeApp() async {
+    // Wait for splash screen to show
     await Future.delayed(const Duration(seconds: 2));
 
     if (!mounted) return;
 
     final authProvider = context.read<AuthProvider>();
+    
+    // ✅ Set logout callback to clear data
+    authProvider.setOnLogout(() {
+      context.read<ItemProvider>().clearData();
+      context.read<CategoryProvider>().clearData();
+      context.read<CabinetProvider>().clearData();
+      debugPrint('🧹 All data cleared on logout');
+    });
+
     await authProvider.checkAuthStatus();
 
     if (!mounted) return;
 
-    // FIX 3: Route based on login state instead of always going to HomeScreen
-    if (authProvider.isLoggedIn) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
-    } else {
+    // ✅ If NOT logged in, clear all data and go to login
+    if (!authProvider.isLoggedIn) {
+      context.read<ItemProvider>().clearData();
+      context.read<CategoryProvider>().clearData();
+      context.read<CabinetProvider>().clearData();
+      
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
+      return;
     }
+
+    // ✅ If logged in, load data and go home
+    context.read<ItemProvider>().loadItems();
+    context.read<CategoryProvider>().loadCategories();
+    context.read<CabinetProvider>()
+      ..loadCabinets()
+      ..loadBoxes();
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // FIX 1: Use Theme colors so dark mode works
     final bg = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
@@ -68,7 +93,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
+                    color: const Color(0xFF4ECDC4).withValues(alpha: 0.3),
                     blurRadius: 20,
                     offset: const Offset(0, 10),
                   ),
