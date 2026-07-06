@@ -20,6 +20,7 @@ import 'help_support_screen.dart';
 import 'medicine_info_screen.dart';
 import 'language_selector_screen.dart';
 import 'shared_cabinets_screen.dart';
+import 'smart_cabinet_control_screen.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -332,6 +333,17 @@ class _MenuScreenState extends State<MenuScreen> {
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(
                       builder: (_) => const HelpSupportScreen()))),
+
+          // ── ✅ SMART CABINET CONTROL ──────────────
+          _item(context, Icons.bluetooth, 'Smart Cabinet Control',
+              badge: '🔵',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SmartCabinetControlScreen(),
+                ),
+              ),
+          ),
 
           // ── ✅ SHARED CABINETS SECTION ──────────────
           _item(context, Icons.people_outline, 'Shared Cabinets',

@@ -1,3 +1,4 @@
+// lib/services/iot_service.dart
 import 'dart:async';
 import 'dart:convert';
 
@@ -33,11 +34,9 @@ class IoTService {
   StreamSubscription<DiscoveredDevice>? _scanSubscription;
   StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
 
-  // CHANGED: separate door subscriptions for upper and lower
   StreamSubscription<List<int>>? _upperDoorSubscription;
   StreamSubscription<List<int>>? _lowerDoorSubscription;
 
-  // CHANGED: door events now carry which door (upper/lower) triggered
   final StreamController<Map<String, dynamic>> _doorStreamController =
       StreamController.broadcast();
 
@@ -109,7 +108,7 @@ class IoTService {
             _isConnected = true;
             _connectionStatusController.add("Connected");
 
-            // CHANGED: subscribe to BOTH door sensors
+            // Subscribe to BOTH door sensors
             _listenDoorSensor(CabinetDoor.upper);
             _listenDoorSensor(CabinetDoor.lower);
           }
