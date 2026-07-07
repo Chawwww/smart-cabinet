@@ -40,8 +40,11 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
   DateTime? _expiryDate;
   DateTime? _productionDate;
 
-  File?   _imageFile;
-  String? _existingImageUrl;
+  // ── Multi-photo support ────────────────────────────────
+  // Photos already saved to Firebase Storage (kept across edits)
+  final List<String> _existingImageUrls = [];
+  // Newly picked photos not yet uploaded
+  final List<File> _newImages = [];
 
   bool _isAiLoading  = false;
   bool _isSaving     = false;
@@ -71,7 +74,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       _status     = i.status;
       _expiryDate     = i.expiryDate;
       _productionDate = i.productionDate;
-      _existingImageUrl = i.imageUrls.isNotEmpty ? i.imageUrls.first : null;
+      _existingImageUrls.addAll(i.imageUrls);
     } else {
       _qtyCtrl.text      = '1';
       _lowStockCtrl.text = '5';
@@ -93,7 +96,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     super.dispose();
   }
 
-  // ── Photo picker ──────────────────────────────────────
+  // ── Photo picker (supports multiple photos) ───────────
   Future<void> _pickPhoto() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -115,7 +118,8 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                       color: Theme.of(context).colorScheme.onSurface)),
               const SizedBox(height: 4),
               Text(
-                'AI can scan the photo and auto-fill item details.',
+                'You can add multiple photos. AI can scan a photo to '
+                'auto-fill item details.',
                 style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context)
@@ -133,17 +137,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                   Expanded(child: _srcBtn(Icons.photo_library, 'Gallery',
                       const Color(0xFF45B7D1),
                       () => Navigator.pop(context, ImageSource.gallery))),
-                  if (_imageFile != null || _existingImageUrl != null) ...[
-                    const SizedBox(width: 12),
-                    Expanded(child: _srcBtn(Icons.delete_outline, 'Remove',
-                        Colors.red, () {
-                      Navigator.pop(context);
-                      setState(() {
-                        _imageFile = null;
-                        _existingImageUrl = null;
-                      });
-                    })),
-                  ],
                 ],
               ),
               const SizedBox(height: 8),
@@ -155,12 +148,30 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
 
     if (source == null) return;
 
-    final picked = await ImagePicker().pickImage(
-        source: source, imageQuality: 85, maxWidth: 1080);
-    if (picked == null) return;
+    if (source == ImageSource.gallery) {
+      // Gallery supports picking several photos at once
+      final picked = await ImagePicker()
+          .pickMultiImage(imageQuality: 85, maxWidth: 1080);
+      if (picked.isEmpty) return;
+      setState(() {
+        _newImages.addAll(picked.map((x) => File(x.path)));
+      });
+      _offerAiScan(_newImages.last);
+    } else {
+      final picked = await ImagePicker().pickImage(
+          source: source, imageQuality: 85, maxWidth: 1080);
+      if (picked == null) return;
+      setState(() => _newImages.add(File(picked.path)));
+      _offerAiScan(_newImages.last);
+    }
+  }
 
-    setState(() => _imageFile = File(picked.path));
-    _offerAiScan();
+  void _removeExistingImage(int index) {
+    setState(() => _existingImageUrls.removeAt(index));
+  }
+
+  void _removeNewImage(int index) {
+    setState(() => _newImages.removeAt(index));
   }
 
   Widget _srcBtn(IconData icon, String label, Color color,
@@ -187,8 +198,8 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
         ),
       );
 
-  // ── Offer AI scan after picking photo ─────────────────
-  void _offerAiScan() {
+  // ── Offer AI scan after picking a photo ───────────────
+  void _offerAiScan(File image) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -231,7 +242,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
           ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(context);
-              _autoFillFromImage();
+              _autoFillFromImage(image);
             },
             icon: const Icon(Icons.auto_awesome, size: 16),
             label: const Text('Auto-Fill'),
@@ -244,11 +255,10 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
   }
 
   // ── AI Auto-fill from image ────────────────────────────
-  Future<void> _autoFillFromImage() async {
-    if (_imageFile == null) return;
+  Future<void> _autoFillFromImage(File image) async {
     setState(() => _isImgLoading = true);
     try {
-      final fill = await AIService().autoFillFromImage(_imageFile!);
+      final fill = await AIService().autoFillFromImage(image);
       if (!mounted) return;
       if (fill.isEmpty) {
         _showSnack('AI could not read the image. Fill in manually.');
@@ -489,18 +499,22 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     _showSnack('✅ AI fields applied! Review and save.');
   }
 
-  // ── Upload image ───────────────────────────────────────
-  Future<String?> _uploadImage(String userId) async {
-    if (_imageFile == null) return _existingImageUrl;
-    try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('item_photos/$userId/${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await ref.putFile(_imageFile!);
-      return await ref.getDownloadURL();
-    } catch (e) {
-      return null;
+  // ── Upload all photos (existing kept + newly picked) ──
+  Future<List<String>> _uploadAllImages(String userId) async {
+    final urls = <String>[..._existingImageUrls];
+    for (final file in _newImages) {
+      try {
+        final ref = FirebaseStorage.instance.ref().child(
+            'item_photos/$userId/'
+            '${DateTime.now().millisecondsSinceEpoch}_${urls.length}.jpg');
+        await ref.putFile(file);
+        final url = await ref.getDownloadURL();
+        urls.add(url);
+      } catch (_) {
+        // Skip photos that fail to upload rather than blocking the save.
+      }
     }
+    return urls;
   }
 
   // ── Save ──────────────────────────────────────────────
@@ -530,7 +544,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       final userId       = authProvider.currentUser?.id ?? '';
       final now          = DateTime.now();
 
-      final imageUrl = await _uploadImage(userId);
+      final imageUrls = await _uploadAllImages(userId);
 
       final tags = _tagsCtrl.text
           .split(',')
@@ -561,7 +575,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
         note:             _noteCtrl.text.trim().isEmpty
             ? null : _noteCtrl.text.trim(),
         tags:             tags,
-        imageUrls:        imageUrl != null ? [imageUrl] : [],
+        imageUrls:        imageUrls,
         isFavorite:       widget.item?.isFavorite ?? false,
         takenCount:       widget.item?.takenCount ?? 0,
         createdAt:        widget.item?.createdAt ?? now,
@@ -638,6 +652,36 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(msg)));
 
+  // ── Photo thumbnail with remove button ────────────────
+  Widget _photoThumb({required Widget child, required VoidCallback onRemove}) {
+    return Container(
+      width: 100,
+      height: 100,
+      margin: const EdgeInsets.only(right: 8),
+      child: Stack(
+        children: [
+          Positioned.fill(child: child),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close,
+                    color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -710,102 +754,108 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
           padding: const EdgeInsets.symmetric(
               horizontal: 16, vertical: 8),
           children: [
-            // ── PHOTO ──────────────────────────────────
-            section('Photo'),
-            GestureDetector(
-              onTap: _pickPhoto,
-              child: Container(
-                height: 160,
-                decoration: BoxDecoration(
-                  color: isDark
-                      ? const Color(0xFF2D2D2D)
-                      : Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                      color: isDark
-                          ? Colors.grey.shade700
-                          : Colors.grey.shade300),
-                ),
-                child: _imageFile != null
-                    ? Stack(fit: StackFit.expand, children: [
-                        ClipRRect(
-                            borderRadius: BorderRadius.circular(13),
-                            child: Image.file(_imageFile!,
-                                fit: BoxFit.cover)),
-                        if (_isImgLoading)
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.55),
-                              borderRadius: BorderRadius.circular(13)),
-                            child: const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                CircularProgressIndicator(
-                                    color: Color(0xFF4ECDC4)),
-                                SizedBox(height: 10),
-                                Text('AI scanning…',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600)),
-                              ],
+            // ── PHOTOS (multiple) ──────────────────────
+            section('Photos'),
+            SizedBox(
+              height: 100,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  ..._existingImageUrls.asMap().entries.map((e) =>
+                      _photoThumb(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            e.value,
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 100, height: 100,
+                              color: Colors.grey.shade300,
+                              child: const Icon(Icons.broken_image),
                             ),
-                          ),
-                        Positioned(bottom: 8, right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(6)),
-                            child: const Icon(Icons.edit,
-                                color: Colors.white, size: 16),
                           ),
                         ),
-                      ])
-                    : _existingImageUrl != null
-                        ? Stack(fit: StackFit.expand, children: [
-                            ClipRRect(
-                                borderRadius:
-                                    BorderRadius.circular(13),
-                                child: Image.network(
-                                    _existingImageUrl!,
-                                    fit: BoxFit.cover)),
-                            Positioned(bottom: 8, right: 8,
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(6)),
-                                child: const Icon(Icons.edit,
-                                    color: Colors.white, size: 16),
-                              ),
-                            ),
-                          ])
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.add_a_photo_outlined,
-                                  size: 36,
+                        onRemove: () => _removeExistingImage(e.key),
+                      )),
+                  ..._newImages.asMap().entries.map((e) =>
+                      _photoThumb(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(
+                            e.value,
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        onRemove: () => _removeNewImage(e.key),
+                      )),
+                  GestureDetector(
+                    onTap: _pickPhoto,
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF2D2D2D)
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: isDark
+                                ? Colors.grey.shade700
+                                : Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_a_photo_outlined,
+                              size: 26,
+                              color: isDark
+                                  ? Colors.grey.shade500
+                                  : Colors.grey.shade400),
+                          const SizedBox(height: 4),
+                          Text('Add',
+                              style: TextStyle(
+                                  fontSize: 11,
                                   color: isDark
                                       ? Colors.grey.shade500
-                                      : Colors.grey.shade400),
-                              const SizedBox(height: 8),
-                              Text('Tap to add photo',
-                                  style: TextStyle(
-                                      color: isDark
-                                          ? Colors.grey.shade500
-                                          : Colors.grey.shade500)),
-                              const SizedBox(height: 4),
-                              Text(
-                                '✨ AI can auto-fill details from the photo',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: const Color(0xFF4ECDC4)
-                                        .withValues(alpha: 0.85)),
-                              ),
-                            ],
-                          ),
+                                      : Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
+            if (_isImgLoading)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Color(0xFF4ECDC4))),
+                    SizedBox(width: 8),
+                    Text('AI scanning…',
+                        style: TextStyle(
+                            fontSize: 12, color: Color(0xFF4ECDC4))),
+                  ],
+                ),
+              )
+            else if (_existingImageUrls.isEmpty && _newImages.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '✨ AI can auto-fill details from a photo',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: const Color(0xFF4ECDC4).withValues(alpha: 0.85)),
+                ),
+              ),
 
             // ── BASIC INFO ──────────────────────────────
             section('Basic Info'),

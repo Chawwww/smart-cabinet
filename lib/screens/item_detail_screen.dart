@@ -23,6 +23,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     with SingleTickerProviderStateMixin {
   late ItemModel _item;
   late TabController _tabs;
+  final _photoPageController = PageController();
+  int _photoIndex = 0;
   bool _isSaving     = false;
   bool _isAiCounting = false;
 
@@ -40,6 +42,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   @override
   void dispose() {
     _tabs.dispose();
+    _photoPageController.dispose();
     super.dispose();
   }
 
@@ -549,8 +552,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
       accent = const Color(0xFF4ECDC4);
     }
 
-    final hasPhoto = _item.imageUrls.isNotEmpty;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(_item.name,
@@ -594,8 +595,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
       ),
       body: Column(
         children: [
-          // SUPERVISOR REQ 5: Hero image displayed directly
-          _buildHeroImage(hasPhoto, accent, isDark),
+          // SUPERVISOR REQ 5: Photo(s) displayed directly, swipeable
+          _buildHeroImage(accent, isDark),
 
           // Expiry warning banner
           if (_item.isExpired)
@@ -640,22 +641,87 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     );
   }
 
-  // ── Hero image ──────────────────────────────────────────
-  Widget _buildHeroImage(bool hasPhoto, Color accent, bool isDark) =>
-      Container(
+  // ── Hero image / photo carousel ─────────────────────────
+  Widget _buildHeroImage(Color accent, bool isDark) {
+    final images = _item.imageUrls;
+
+    if (images.isEmpty) {
+      return Container(
         height: 180,
         width: double.infinity,
         color: accent.withValues(alpha: isDark ? 0.15 : 0.08),
-        child: hasPhoto
-            ? Image.network(_item.imageUrls.first,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Center(
-                    child: Text(_item.icon ?? '📦',
-                        style: const TextStyle(fontSize: 72))))
-            : Center(
-                child: Text(_item.icon ?? '📦',
-                    style: const TextStyle(fontSize: 72))),
+        child: Center(
+            child: Text(_item.icon ?? '📦',
+                style: const TextStyle(fontSize: 72))),
       );
+    }
+
+    return Stack(
+      children: [
+        Container(
+          height: 180,
+          width: double.infinity,
+          color: accent.withValues(alpha: isDark ? 0.15 : 0.08),
+          child: PageView.builder(
+            controller: _photoPageController,
+            itemCount: images.length,
+            onPageChanged: (i) => setState(() => _photoIndex = i),
+            itemBuilder: (_, i) => Image.network(
+              images[i],
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Center(
+                  child: Text(_item.icon ?? '📦',
+                      style: const TextStyle(fontSize: 72))),
+            ),
+          ),
+        ),
+        if (images.length > 1) ...[
+          Positioned(
+            bottom: 8,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(images.length, (i) {
+                final active = i == _photoIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: active ? 8 : 6,
+                  height: active ? 8 : 6,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: active
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.5),
+                  ),
+                );
+              }),
+            ),
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${_photoIndex + 1}/${images.length}',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 
   Widget _banner(String msg, Color color) => Container(
         width: double.infinity,
@@ -690,12 +756,45 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         ]),
         const SizedBox(height: 14),
 
+        // ── Description shown prominently right up top ──
+        if (_item.description != null &&
+            _item.description!.trim().isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: isDark ? 0.14 : 0.07),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: accent.withValues(alpha: 0.25)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.description_outlined, size: 16, color: accent),
+                  const SizedBox(width: 6),
+                  Text('Description',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: accent)),
+                ]),
+                const SizedBox(height: 8),
+                Text(
+                  _item.description!,
+                  style: TextStyle(
+                      fontSize: 14, height: 1.4, color: textColor),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+
         // ✅ Medicine Info Button (only for medicine items)
         _buildMedicineInfoButton(),
 
         _infoCard(textColor, [
-          if (_item.description != null)
-            _row('Description', _item.description!, textColor, subColor),
           if (_item.brand != null)
             _row('Brand', _item.brand!, textColor, subColor),
           if (_item.note != null)

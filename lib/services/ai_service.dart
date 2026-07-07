@@ -1,3 +1,4 @@
+// lib/services/ai_service.dart
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -58,6 +59,52 @@ Rules:
       return response.text ?? 'No response generated.';
     } catch (e) {
       throw Exception('Failed to get AI response: $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════
+  // SMART SEARCH
+  // Used by SearchScreen: detects language, translates,
+  // matches cabinet items, and suggests where to buy
+  // items that aren't in the cabinet.
+  // ══════════════════════════════════════════════
+  Future<SmartSearchResult> smartSearch(
+      String query, List<String> cabinetItemNames) async {
+    if (_model == null) throw Exception('AI model not initialized.');
+
+    final prompt = '''
+User searched for: "$query"
+
+This query may be written in Chinese, Malay, English, or another language.
+
+Cabinet contains these items: ${cabinetItemNames.isEmpty ? 'None' : cabinetItemNames.join(', ')}
+
+Return ONLY this JSON (no markdown, no backticks):
+{
+  "detected_language": "name of the language the query is written in, e.g. Chinese, Malay, English",
+  "english_translation": "the query translated to English, empty string if the query is already in English",
+  "matched_item_names": ["exact cabinet item names that match the query, empty array if none match"],
+  "related_info": "brief helpful info about what the user is searching for, 2-4 sentences, empty string if not applicable",
+  "online_suggestions": [
+    {
+      "platform": "store or platform name, e.g. Shopee, Guardian, Watsons, Lazada",
+      "note": "short helpful note, e.g. fastest delivery or nearest branch",
+      "search_url": "a URL that searches for this item on that platform"
+    }
+  ]
+}
+
+Rules:
+- Only populate online_suggestions when matched_item_names is empty (item not found in cabinet)
+- Limit online_suggestions to 2-4 relevant, real platforms
+- Return ONLY the JSON, absolutely nothing else
+''';
+
+    try {
+      final response = await _model!.generateContent([Content.text(prompt)]);
+      return _parseSmartSearch(response.text ?? '{}');
+    } catch (e) {
+      throw Exception('Smart search failed: $e');
     }
   }
 
@@ -322,6 +369,44 @@ Rules:
     }
   }
 
+  SmartSearchResult _parseSmartSearch(String raw) {
+    try {
+      String clean = raw.trim()
+          .replaceAll(RegExp(r'```json|```'), '').trim();
+      final start = clean.indexOf('{');
+      final end   = clean.lastIndexOf('}');
+      if (start == -1 || end == -1) return SmartSearchResult.empty();
+
+      final json = jsonDecode(clean.substring(start, end + 1))
+          as Map<String, dynamic>;
+
+      final suggestionsRaw = (json['online_suggestions'] as List<dynamic>?) ?? [];
+      final suggestions = suggestionsRaw
+          .whereType<Map<String, dynamic>>()
+          .map((m) => OnlineSuggestion(
+                platform:  (m['platform']   as String?)?.trim() ?? '',
+                note:      (m['note']       as String?)?.trim() ?? '',
+                searchUrl: (m['search_url'] as String?)?.trim() ?? '',
+              ))
+          .where((s) => s.platform.isNotEmpty)
+          .toList();
+
+      return SmartSearchResult(
+        detectedLanguage:   (json['detected_language']   as String?)?.trim() ?? '',
+        englishTranslation: (json['english_translation'] as String?)?.trim() ?? '',
+        matchedItemNames: (json['matched_item_names'] as List<dynamic>?)
+                ?.map((e) => e.toString().trim())
+                .where((e) => e.isNotEmpty)
+                .toList() ?? [],
+        relatedInfo:      (json['related_info'] as String?)?.trim() ?? '',
+        onlineSuggestions: suggestions,
+      );
+    } catch (e) {
+      debugPrint('SmartSearch parse error: $e\nRaw: $raw');
+      return SmartSearchResult.empty();
+    }
+  }
+
   DateTime? _parseDate(dynamic value) {
     if (value == null || value.toString().isEmpty) return null;
     try { return DateTime.parse(value.toString()); }
@@ -522,7 +607,7 @@ $sideEffects
 CONTRAINDICATIONS:
 $contraindications
 
-STORAGE / 储存:
+STORAGE:
 $storage
 
 ALTERNATIVES :
@@ -534,4 +619,44 @@ $warnings
 ---
 For reference only. Consult a pharmacist or doctor before taking any medication.
 ''';
+}
+
+/// Result of AIService.smartSearch() — used by SearchScreen to show
+/// language detection, matched cabinet items, related info, and
+/// "where to buy" suggestions when an item isn't in the cabinet.
+class SmartSearchResult {
+  final String detectedLanguage;
+  final String englishTranslation;
+  final List<String> matchedItemNames;
+  final String relatedInfo;
+  final List<OnlineSuggestion> onlineSuggestions;
+
+  const SmartSearchResult({
+    required this.detectedLanguage,
+    required this.englishTranslation,
+    required this.matchedItemNames,
+    required this.relatedInfo,
+    required this.onlineSuggestions,
+  });
+
+  factory SmartSearchResult.empty() => const SmartSearchResult(
+    detectedLanguage: '',
+    englishTranslation: '',
+    matchedItemNames: [],
+    relatedInfo: '',
+    onlineSuggestions: [],
+  );
+}
+
+/// A single "where to buy" suggestion shown in the Smart Search results.
+class OnlineSuggestion {
+  final String platform;
+  final String note;
+  final String searchUrl;
+
+  const OnlineSuggestion({
+    required this.platform,
+    required this.note,
+    required this.searchUrl,
+  });
 }
