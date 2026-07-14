@@ -1,5 +1,5 @@
-import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ ADDED
-import 'package:flutter/foundation.dart'; // ✅ ADDED
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import '../models/item_model.dart';
 import 'notification_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,7 +13,35 @@ class NotificationManager {
   final NotificationService _notifService = NotificationService();
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  static const int expiryWarningDays = 7;
+  static const int defaultExpiryAlertDays = 7;
+
+  // ✅ ADDED — notification_badge.dart calls this but it never existed.
+  Stream<int> streamUnreadNotificationCount(String userId) {
+    return _db
+        .collection('notifications')
+        .where('userId', isEqualTo: userId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
+
+  Future<int> getExpiryAlertDays(String userId) async {
+    try {
+      final doc = await _db.collection('users').doc(userId).get();
+      final days = doc.data()?['expiryAlertDays'];
+      if (days is int && days > 0) return days;
+      return defaultExpiryAlertDays;
+    } catch (_) {
+      return defaultExpiryAlertDays;
+    }
+  }
+
+  Future<void> setExpiryAlertDays(String userId, int days) async {
+    await _db.collection('users').doc(userId).set(
+      {'expiryAlertDays': days},
+      SetOptions(merge: true),
+    );
+  }
 
   Future<void> onItemSaved(ItemModel item) async {
     if (item.id == null) return;
@@ -24,8 +52,9 @@ class NotificationManager {
 
     if (item.expiryDate == null) return;
 
-    final warnDate = item.expiryDate!
-        .subtract(const Duration(days: expiryWarningDays));
+    final alertDays = await getExpiryAlertDays(item.userId);
+
+    final warnDate = item.expiryDate!.subtract(Duration(days: alertDays));
 
     if (warnDate.isAfter(DateTime.now())) {
       await _notifService.scheduleExpiryNotification(
@@ -86,11 +115,11 @@ class NotificationManager {
       final data = message.data;
       final itemId = data['itemId'];
       final type = data['type'] ?? 'general';
-      
+
       String title = message.notification?.title ?? data['title'] ?? 'New Notification';
       String body = message.notification?.body ?? data['body'] ?? '';
       String? itemName = data['itemName'];
-      
+
       if (itemName != null && itemName.isNotEmpty) {
         if (type == 'expiry') {
           title = '⏰ $itemName is expiring soon';
@@ -100,18 +129,18 @@ class NotificationManager {
           body = body.isNotEmpty ? body : 'Consider restocking.';
         }
       }
-      
-      final notifId = itemId != null 
-          ? _stableIdFor(itemId) 
+
+      final notifId = itemId != null
+          ? _stableIdFor(itemId)
           : DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      
+
       await _notifService.showNotification(
         id: notifId,
         title: title,
         body: body,
         payload: itemId,
       );
-      
+
       if (itemId != null && itemName != null) {
         await _db.collection('notifications').add({
           'userId': data['userId'],
@@ -124,9 +153,8 @@ class NotificationManager {
           'source': 'fcm',
         });
       }
-      
+
       debugPrint('✅ FCM notification handled: $title');
-      
     } catch (e) {
       debugPrint('❌ Failed to handle FCM notification: $e');
     }

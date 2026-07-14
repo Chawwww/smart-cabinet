@@ -50,3 +50,4 @@ lib/firebase_options.dart
 
 lib/config/app_constants.dart
 
+node_modules/

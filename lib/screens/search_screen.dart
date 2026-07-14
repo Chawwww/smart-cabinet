@@ -464,20 +464,27 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _localResults(List<ItemModel> results, Color textColor, Color subColor) {
     if (results.isEmpty) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const EmptyState(icon: Icons.search_off,
+      // ✅ FIXED: Wrapped in SingleChildScrollView to prevent overflow on small screens
+      return SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const EmptyState(
+              icon: Icons.search_off,
               title: 'No results found',
-              subtitle: 'Tap ✨ to search with AI'),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: () => _runAiSearch(_query),
-            icon: const Icon(Icons.auto_awesome, size: 16),
-            label: const Text('Try AI Smart Search'),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4ECDC4)),
-          ),
-        ],
+              subtitle: 'Tap ✨ to search with AI',
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () => _runAiSearch(_query),
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('Try AI Smart Search'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF4ECDC4),
+              ),
+            ),
+          ],
+        ),
       );
     }
     return _grid(results);

@@ -35,6 +35,11 @@ import 'screens/language_selector_screen.dart';
 import 'screens/medicine_info_screen.dart';
 import 'screens/share_cabinet_screen.dart';
 import 'screens/shared_cabinets_screen.dart';
+// ✅ ADDED — this import was missing, which is why the Dart compiler
+// couldn't resolve `DoorStatusScreen` and reported "Not a constant
+// expression" at the '/door-status' route below. If your actual file
+// lives at a different path/name, update this line to match it.
+import 'screens/door_status_screen.dart';
 import 'themes/app_theme.dart';
 import 'services/notification_service.dart';
 import 'services/notification_manager.dart';
@@ -53,7 +58,7 @@ Future<void> _firebaseMessagingBackgroundHandler(
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  
+
   final NotificationManager notifManager = NotificationManager();
   await notifManager.handleFCMNotification(message);
 }
@@ -126,7 +131,7 @@ void main() async {
         badge: true,
         sound: true,
       );
-      
+
       FirebaseMessaging.onMessage.listen(
         (RemoteMessage message) async {
           debugPrint('📱 Foreground message received');
@@ -134,15 +139,15 @@ void main() async {
           await notifManager.handleFCMNotification(message);
         },
       );
-      
+
       FirebaseMessaging.onBackgroundMessage(
         _firebaseMessagingBackgroundHandler,
       );
-      
+
       String? token = await messaging.getToken();
       debugPrint('🔑 FCM TOKEN = $token');
       await _storeFCMToken(token);
-      
+
       debugPrint('✅ Firebase Messaging initialized');
     } catch (e) {
       debugPrint('⚠️ FCM initialization error: $e');
@@ -184,11 +189,11 @@ void main() async {
 // Store FCM token in Firestore
 Future<void> _storeFCMToken(String? token) async {
   if (token == null) return;
-  
+
   try {
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
     final User? user = FirebaseAuth.instance.currentUser;
-    
+
     if (user != null) {
       await firestore
           .collection('users')
@@ -216,13 +221,13 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: AppConstants.appName,
           debugShowCheckedModeBanner: false,
-          
+
           navigatorKey: NavigationService.navigatorKey,
-          
+
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: themeProvider.themeMode,
-          
+
           locale: languageProvider.locale,
           supportedLocales: LanguageProvider.supportedLocales,
           localizationsDelegates: const [
@@ -231,9 +236,9 @@ class MyApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          
+
           home: const SplashScreen(),
-          
+
           routes: {
             '/login': (_) => const LoginScreen(),
             '/register': (_) => const RegisterScreen(),
@@ -247,6 +252,7 @@ class MyApp extends StatelessWidget {
             '/ai-chat': (_) => const AIChatScreen(),
             '/profile': (_) => const ProfileScreen(),
             '/cabinet': (_) => const SmartCabinetControlScreen(),
+            '/door-status': (_) => const DoorStatusScreen(),
             '/language-selector': (_) => const LanguageSelectorScreen(),
             '/medicine-info': (_) => const MedicineInfoScreen(),
             '/shared-cabinets': (_) => const SharedCabinetsScreen(),
@@ -255,12 +261,12 @@ class MyApp extends StatelessWidget {
                   cabinetName: '',
                 ),
           },
-          
+
           onGenerateRoute: (settings) {
             debugPrint('🔀 Route: ${settings.name}');
             return null;
           },
-          
+
           onUnknownRoute: (settings) {
             return MaterialPageRoute(
               builder: (_) => Scaffold(
