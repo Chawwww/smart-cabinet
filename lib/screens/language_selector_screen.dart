@@ -1,7 +1,8 @@
+// lib/screens/language_selector_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/language_provider.dart';
-import '../l10n/app_localizations.dart';
+import '../l10n/l10n.dart';
 
 class LanguageSelectorScreen extends StatelessWidget {
   const LanguageSelectorScreen({super.key});
@@ -9,12 +10,12 @@ class LanguageSelectorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final languageProvider = context.watch<LanguageProvider>();
-    final appLocalizations = AppLocalizations.of(context)!;
+    final s = S.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(appLocalizations.selectLanguage),
+        title: Text(s.selectLanguage),
         centerTitle: true,
       ),
       body: Padding(
@@ -32,7 +33,7 @@ class LanguageSelectorScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    appLocalizations.selectLanguage,
+                    s.selectLanguage,
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -40,7 +41,7 @@ class LanguageSelectorScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Choose your preferred language',
+                    s.chooseLanguage,
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey.shade600,
@@ -129,12 +130,13 @@ class LanguageSelectorScreen extends StatelessWidget {
 
   void _selectLanguage(BuildContext context, String languageCode) {
     final languageProvider = context.read<LanguageProvider>();
+    final s = S.of(context);
     languageProvider.setLanguage(languageCode);
     
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Language changed to ${LanguageProvider.languageNames[languageCode]}',
+          '${s.language} changed to ${LanguageProvider.languageNames[languageCode]}',
         ),
         backgroundColor: const Color(0xFF4ECDC4),
         duration: const Duration(seconds: 2),

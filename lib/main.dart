@@ -1,284 +1,201 @@
 // lib/main.dart
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'firebase_options.dart';
 import 'config/app_constants.dart';
+import 'l10n/l10n.dart';  // ← S class only
+
 import 'providers/auth_provider.dart';
+import 'providers/theme_provider.dart';
 import 'providers/language_provider.dart';
 import 'providers/item_provider.dart';
 import 'providers/category_provider.dart';
 import 'providers/cabinet_provider.dart';
-import 'providers/theme_provider.dart';
+import 'providers/notification_provider.dart';
+import 'providers/dashboard_provider.dart';
+import 'providers/search_provider.dart';
+import 'services/notification_service.dart';
+import 'services/ai_service.dart';
+import 'themes/app_theme.dart';
+
+import 'models/item_model.dart';
+import 'models/cabinet_model.dart';
+
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/forgot_password_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/workflows_screen.dart';
 import 'screens/items_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/menu_screen.dart';
-import 'screens/ai_chat_screen.dart';
 import 'screens/profile_screen.dart';
-import 'screens/smart_cabinet_control_screen.dart';
-import 'screens/language_selector_screen.dart';
-import 'screens/medicine_info_screen.dart';
+import 'screens/category_screen.dart';
+import 'screens/add_edit_item_screen.dart';
+import 'screens/add_edit_category_screen.dart';
+import 'screens/add_edit_cabinet_screen.dart';
+import 'screens/item_detail_screen.dart';
+import 'screens/cabinet_detail_screen.dart';
 import 'screens/share_cabinet_screen.dart';
 import 'screens/shared_cabinets_screen.dart';
-// ✅ ADDED — this import was missing, which is why the Dart compiler
-// couldn't resolve `DoorStatusScreen` and reported "Not a constant
-// expression" at the '/door-status' route below. If your actual file
-// lives at a different path/name, update this line to match it.
+import 'screens/ai_chat_screen.dart';
+import 'screens/help_support_screen.dart';
+import 'screens/custom_fields_screen.dart';
+import 'screens/language_selector_screen.dart';
+import 'screens/forgot_password_screen.dart';
+import 'screens/medicine_info_screen.dart';
+import 'screens/smart_cabinet_control_screen.dart';
+import 'screens/workflows_screen.dart';
 import 'screens/door_status_screen.dart';
-import 'themes/app_theme.dart';
-import 'services/notification_service.dart';
-import 'services/notification_manager.dart';
-import 'services/iot_service.dart';
-import 'services/auth_service.dart';
-import 'services/navigation_service.dart';
-import 'l10n/app_localizations.dart';
-
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-    FlutterLocalNotificationsPlugin();
+import 'screens/notification_settings_screen.dart';
 
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(
-    RemoteMessage message) async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  final NotificationManager notifManager = NotificationManager();
-  await notifManager.handleFCMNotification(message);
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  debugPrint('📨 Background message: ${message.messageId}');
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  final prefs = await SharedPreferences.getInstance();
 
-  debugPrint('✅ Firebase initialized');
+  await NotificationService().initialize();
+  AIService().initialize();
 
-  // Enable Firestore offline persistence
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-  );
-  debugPrint('✅ Firestore offline persistence enabled');
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // ✅ Listen to auth changes to clear data on logout
-  FirebaseAuth.instance.authStateChanges().listen((User? user) {
-    if (user == null) {
-      debugPrint('🔴 User logged out - data will be cleared');
-    }
-  });
-
-  // Initialize Google Sign-In
-  if (!kIsWeb) {
-    try {
-      final authService = AuthService();
-      await authService.initGoogleSignIn();
-      debugPrint('✅ Google Sign-In initialized');
-    } catch (e) {
-      debugPrint('⚠️ Google Sign-In initialization error: $e');
-    }
-  }
-
-  // Initialize Local Notifications
-  const AndroidInitializationSettings androidSettings =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
-  const DarwinInitializationSettings iosSettings =
-      DarwinInitializationSettings();
-  const InitializationSettings initializationSettings =
-      InitializationSettings(
-    android: androidSettings,
-    iOS: iosSettings,
-  );
-
-  await flutterLocalNotificationsPlugin.initialize(
-    settings: initializationSettings,
-    onDidReceiveNotificationResponse: (NotificationResponse response) {
-      debugPrint('🔔 Notification tapped: ${response.payload}');
-      final payload = response.payload;
-      if (payload != null && payload.isNotEmpty) {
-        NavigationService.navigateTo('/notifications', arguments: payload);
-      }
-    },
-  );
-  debugPrint('✅ Local notifications initialized');
-
-  // Initialize Firebase Messaging (FCM)
-  if (!kIsWeb) {
-    try {
-      await NotificationService().requestPermissions();
-      final FirebaseMessaging messaging = FirebaseMessaging.instance;
-      await messaging.setForegroundNotificationPresentationOptions(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-
-      FirebaseMessaging.onMessage.listen(
-        (RemoteMessage message) async {
-          debugPrint('📱 Foreground message received');
-          final NotificationManager notifManager = NotificationManager();
-          await notifManager.handleFCMNotification(message);
-        },
-      );
-
-      FirebaseMessaging.onBackgroundMessage(
-        _firebaseMessagingBackgroundHandler,
-      );
-
-      String? token = await messaging.getToken();
-      debugPrint('🔑 FCM TOKEN = $token');
-      await _storeFCMToken(token);
-
-      debugPrint('✅ Firebase Messaging initialized');
-    } catch (e) {
-      debugPrint('⚠️ FCM initialization error: $e');
-    }
-  }
-
-  // Initialize SharedPreferences
-  final SharedPreferences prefs = await SharedPreferences.getInstance();
-  debugPrint('✅ SharedPreferences initialized');
-
-  // Initialize IoT Service
-  final IoTService iotService = IoTService();
-  if (!kIsWeb) {
-    try {
-      await iotService.initialize();
-      debugPrint('✅ IoT Service initialized');
-    } catch (e) {
-      debugPrint('⚠️ IoT initialization error: $e');
-    }
-  }
-
-  // Run the app
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => LanguageProvider(prefs)),
-        ChangeNotifierProvider(create: (_) => ItemProvider()),
-        ChangeNotifierProvider(create: (_) => CategoryProvider()),
-        ChangeNotifierProvider(create: (_) => CabinetProvider()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider(prefs)),
-        Provider<IoTService>.value(value: iotService),
-      ],
-      child: const MyApp(),
-    ),
-  );
+  runApp(SmartCabinetApp(prefs: prefs));
 }
 
-// Store FCM token in Firestore
-Future<void> _storeFCMToken(String? token) async {
-  if (token == null) return;
+class SmartCabinetApp extends StatelessWidget {
+  final SharedPreferences prefs;
 
-  try {
-    final FirebaseFirestore firestore = FirebaseFirestore.instance;
-    final User? user = FirebaseAuth.instance.currentUser;
-
-    if (user != null) {
-      await firestore
-          .collection('users')
-          .doc(user.uid)
-          .set({
-            'fcmToken': token,
-            'fcmTokenUpdated': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-      debugPrint('✅ FCM token stored in Firestore for user: ${user.uid}');
-    } else {
-      debugPrint('⚠️ No user logged in, FCM token not stored');
-    }
-  } catch (e) {
-    debugPrint('⚠️ Failed to store FCM token: $e');
-  }
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const SmartCabinetApp({super.key, required this.prefs});
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<ThemeProvider, LanguageProvider>(
-      builder: (context, themeProvider, languageProvider, child) {
-        return MaterialApp(
-          title: AppConstants.appName,
-          debugShowCheckedModeBanner: false,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider(prefs)),
+        ChangeNotifierProvider(create: (_) => LanguageProvider(prefs)),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => ItemProvider()),
+        ChangeNotifierProvider(create: (_) => CategoryProvider()),
+        ChangeNotifierProvider(create: (_) => CabinetProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        ChangeNotifierProvider(create: (_) => DashboardProvider()),
+        ChangeNotifierProvider(create: (_) => SearchProvider()),
+      ],
+      child: Consumer2<ThemeProvider, LanguageProvider>(
+        builder: (context, themeProvider, languageProvider, _) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            title: AppConstants.appName,
+            
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: themeProvider.themeMode,
 
-          navigatorKey: NavigationService.navigatorKey,
+            // ✅ Use S.delegate from l10n.dart
+            locale: languageProvider.locale,
+            supportedLocales: S.delegate.supportedLocales,
+            localizationsDelegates: const [
+              S.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+            ],
+            
+            localeResolutionCallback: (locale, supportedLocales) {
+              for (final supportedLocale in supportedLocales) {
+                if (supportedLocale.languageCode == locale?.languageCode) {
+                  return supportedLocale;
+                }
+              }
+              return const Locale('en');
+            },
 
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: themeProvider.themeMode,
-
-          locale: languageProvider.locale,
-          supportedLocales: LanguageProvider.supportedLocales,
-          localizationsDelegates: const [
-            AppLocalizations.delegate,
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-
-          home: const SplashScreen(),
-
-          routes: {
-            '/login': (_) => const LoginScreen(),
-            '/register': (_) => const RegisterScreen(),
-            '/forgot-password': (_) => const ForgotPasswordScreen(),
-            '/home': (_) => const HomeScreen(),
-            '/workflows': (_) => const WorkflowsScreen(),
-            '/items': (_) => const ItemsScreen(),
-            '/search': (_) => const SearchScreen(),
-            '/notifications': (_) => const NotificationsScreen(),
-            '/menu': (_) => const MenuScreen(),
-            '/ai-chat': (_) => const AIChatScreen(),
-            '/profile': (_) => const ProfileScreen(),
-            '/cabinet': (_) => const SmartCabinetControlScreen(),
-            '/door-status': (_) => const DoorStatusScreen(),
-            '/language-selector': (_) => const LanguageSelectorScreen(),
-            '/medicine-info': (_) => const MedicineInfoScreen(),
-            '/shared-cabinets': (_) => const SharedCabinetsScreen(),
-            '/share-cabinet': (_) => const ShareCabinetScreen(
-                  cabinetId: '',
-                  cabinetName: '',
-                ),
-          },
-
-          onGenerateRoute: (settings) {
-            debugPrint('🔀 Route: ${settings.name}');
-            return null;
-          },
-
-          onUnknownRoute: (settings) {
-            return MaterialPageRoute(
-              builder: (_) => Scaffold(
-                appBar: AppBar(title: const Text('Page Not Found')),
-                body: const Center(
-                  child: Text('The page you are looking for does not exist.'),
-                ),
-              ),
-            );
-          },
-        );
-      },
+            initialRoute: '/',
+            routes: {
+              '/': (context) => const SplashScreen(),
+              '/login': (context) => const LoginScreen(),
+              '/register': (context) => const RegisterScreen(),
+              '/home': (context) => const HomeScreen(),
+              '/items': (context) => const ItemsScreen(),
+              '/search': (context) => const SearchScreen(),
+              '/notifications': (context) => const NotificationsScreen(),
+              '/menu': (context) => const MenuScreen(),
+              '/profile': (context) => const ProfileScreen(),
+              '/categories': (context) => const CategoryScreen(),
+              '/add-item': (context) => const AddEditItemScreen(),
+              '/add-category': (context) => const AddEditCategoryScreen(),
+              '/add-cabinet': (context) => const AddEditCabinetScreen(),
+              
+              '/item-detail': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                if (args is ItemModel) {
+                  return ItemDetailScreen(item: args);
+                }
+                return const Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, size: 48, color: Colors.red),
+                        SizedBox(height: 16),
+                        Text('Item not found'),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              
+              '/cabinet-detail': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                if (args is String) {
+                  return CabinetDetailScreen(cabinetId: args);
+                }
+                return const Scaffold(
+                  body: Center(child: Text('Cabinet not found')),
+                );
+              },
+              
+              '/share-cabinet': (context) {
+                final args = ModalRoute.of(context)?.settings.arguments;
+                if (args is Map<String, String>) {
+                  return ShareCabinetScreen(
+                    cabinetId: args['cabinetId'] ?? '',
+                    cabinetName: args['cabinetName'] ?? '',
+                  );
+                }
+                return const Scaffold(
+                  body: Center(child: Text('Cabinet not found')),
+                );
+              },
+              
+              '/shared-cabinets': (context) => const SharedCabinetsScreen(),
+              '/ai-chat': (context) => const AIChatScreen(),
+              '/help-support': (context) => const HelpSupportScreen(),
+              '/custom-fields': (context) => const CustomFieldsScreen(),
+              '/language-selector': (context) => const LanguageSelectorScreen(),
+              '/forgot-password': (context) => const ForgotPasswordScreen(),
+              '/medicine-info': (context) => const MedicineInfoScreen(),
+              '/smart-cabinet-control': (context) => const SmartCabinetControlScreen(),
+              '/workflows': (context) => const WorkflowsScreen(),
+              '/door-status': (context) => const DoorStatusScreen(),
+              '/notification-settings': (context) => const NotificationSettingsScreen(),
+            },
+          );
+        },
+      ),
     );
   }
 }

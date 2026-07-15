@@ -1,3 +1,4 @@
+// lib/screens/item_detail_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -9,11 +10,16 @@ import '../providers/item_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/ai_service.dart';
 import 'add_edit_item_screen.dart';
-import 'medicine_info_screen.dart'; // ✅ ADDED for Medicine Info
+import 'medicine_info_screen.dart';
 
 class ItemDetailScreen extends StatefulWidget {
-  final ItemModel item;
-  const ItemDetailScreen({super.key, required this.item});
+  final ItemModel? item;
+  
+  const ItemDetailScreen({super.key, this.item});
+  
+  // Factory constructor for non-null items
+  const ItemDetailScreen.withItem({super.key, required ItemModel item})
+      : item = item;
 
   @override
   State<ItemDetailScreen> createState() => _ItemDetailScreenState();
@@ -25,17 +31,36 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   late TabController _tabs;
   final _photoPageController = PageController();
   int _photoIndex = 0;
-  bool _isSaving     = false;
+  bool _isSaving = false;
   bool _isAiCounting = false;
+  bool _isInitialized = false;
 
-  final _fmt     = DateFormat('dd MMM yyyy');
+  final _fmt = DateFormat('dd MMM yyyy');
   final _fmtFull = DateFormat('dd MMM yyyy, hh:mm a');
 
   @override
   void initState() {
     super.initState();
-    _item = widget.item;
+    
+    // Handle case where item is null
+    if (widget.item == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Item not found'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          Navigator.pop(context);
+        }
+      });
+      return;
+    }
+    
+    _item = widget.item!;
     _tabs = TabController(length: 3, vsync: this);
+    _isInitialized = true;
     AIService().initialize();
   }
 
@@ -50,6 +75,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   // SUPERVISOR REQ 2: Withdrawal with recording
   // ════════════════════════════════════════════
   Future<void> _showWithdrawDialog() async {
+    if (!_isInitialized) return;
+    
     // SUPERVISOR REQ 3: Block expired items from being taken
     if (_item.isExpired) {
       _showBlockedDialog(
@@ -77,7 +104,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => StatefulBuilder(builder: (ctx, setLocal) {
         final textColor = Theme.of(ctx).colorScheme.onSurface;
-        final subColor  = textColor.withValues(alpha: 0.55);
+        final subColor = textColor.withValues(alpha: 0.55);
 
         return Padding(
           padding: EdgeInsets.only(
@@ -198,6 +225,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   }
 
   Future<void> _doWithdraw(int qty, String note) async {
+    if (!_isInitialized) return;
+    
     final authProvider = context.read<AuthProvider>();
     final takenBy = authProvider.currentUser?.name ?? 'Unknown';
 
@@ -232,6 +261,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   // SUPERVISOR REQ 6: AI COUNT FROM PHOTO
   // ════════════════════════════════════════════
   Future<void> _aiCountFromPhoto() async {
+    if (!_isInitialized) return;
+    
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: Theme.of(context).cardTheme.color ??
@@ -293,7 +324,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
 
   void _showAiCountResult(AiCountResult result) {
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.55);
+    final subColor = textColor.withValues(alpha: 0.55);
 
     showDialog(
       context: context,
@@ -393,13 +424,15 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   }
 
   Future<void> _applyAiCount(int count) async {
+    if (!_isInitialized) return;
+    
     final now = DateTime.now();
     final updated = _item.copyWith(
-      quantity:          count,
+      quantity: count,
       aiCountedQuantity: count,
-      aiCountedAt:       now,
-      status:            count == 0 ? 'taken' : 'inside',
-      updatedAt:         now,
+      aiCountedAt: now,
+      status: count == 0 ? 'taken' : 'inside',
+      updatedAt: now,
     );
     setState(() => _item = updated);
     await context.read<ItemProvider>().updateItem(updated);
@@ -407,11 +440,13 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   }
 
   Future<void> _returnItem() async {
+    if (!_isInitialized) return;
+    
     setState(() => _isSaving = true);
     final now = DateTime.now();
     final updated = _item.copyWith(
-      quantity:  _item.quantity + 1,
-      status:    'inside',
+      quantity: _item.quantity + 1,
+      status: 'inside',
       updatedAt: now,
     );
     setState(() => _item = updated);
@@ -421,6 +456,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   }
 
   Future<void> _toggleFavourite() async {
+    if (!_isInitialized) return;
+    
     final updated = _item.copyWith(
       isFavorite: !_item.isFavorite,
       updatedAt: DateTime.now(),
@@ -430,6 +467,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   }
 
   Future<void> _delete() async {
+    if (!_isInitialized) return;
+    
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -514,6 +553,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
 
   // ── Check if item is medicine ──────────────────────────
   bool _isMedicine() {
+    if (!_isInitialized) return false;
+    
     // Check category
     if (_item.categoryId.toLowerCase().contains('med')) return true;
     
@@ -539,9 +580,20 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   // ════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    // If not initialized, show loading
+    if (!_isInitialized) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFF4ECDC4),
+          ),
+        ),
+      );
+    }
+    
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.55);
-    final isDark    = Theme.of(context).brightness == Brightness.dark;
+    final subColor = textColor.withValues(alpha: 0.55);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     Color accent;
     try {
@@ -1048,9 +1100,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
       itemCount: history.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (ctx, i) {
-        final rec  = history[i] as Map<String, dynamic>;
-        final qty  = rec['qty'] as int? ?? 0;
-        final by   = rec['by']  as String? ?? 'Unknown';
+        final rec = history[i] as Map<String, dynamic>;
+        final qty = rec['qty'] as int? ?? 0;
+        final by = rec['by'] as String? ?? 'Unknown';
         final note = rec['note'] as String?;
         DateTime? at;
         try { at = DateTime.parse(rec['at'] as String); } catch (_) {}

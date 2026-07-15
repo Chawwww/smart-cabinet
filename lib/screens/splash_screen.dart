@@ -6,6 +6,8 @@ import '../providers/auth_provider.dart';
 import '../providers/item_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/cabinet_provider.dart';
+import '../services/notification_service.dart';
+import '../services/ai_service.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
@@ -29,6 +31,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
+    // Initialize services
+    await NotificationService().initialize();
+    AIService().initialize();
+
     final authProvider = context.read<AuthProvider>();
     
     // ✅ Set logout callback to clear data
@@ -39,6 +45,7 @@ class _SplashScreenState extends State<SplashScreen> {
       debugPrint('🧹 All data cleared on logout');
     });
 
+    // Check auth status
     await authProvider.checkAuthStatus();
 
     if (!mounted) return;
@@ -63,6 +70,12 @@ class _SplashScreenState extends State<SplashScreen> {
       ..loadCabinets()
       ..loadBoxes();
 
+    // Register FCM token
+    final userId = authProvider.currentUser?.id;
+    if (userId != null) {
+      await NotificationService().registerFcmToken(userId);
+    }
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -71,12 +84,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bg = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5);
 
     return Scaffold(
-      backgroundColor: bg,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
