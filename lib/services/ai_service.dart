@@ -12,11 +12,25 @@ class AIService {
 
   GenerativeModel? _model;
   GenerativeModel? _visionModel;
+  bool _initialized = false;
+
+  // ══════════════════════════════════════════════
+  // FIX #1: initialize() no longer fails silently.
+  // Callers (and the UI) can now check `isInitialized`
+  // and read `initError` to see *why* init failed,
+  // instead of every later call just throwing a
+  // generic "AI model not initialized." with no context.
+  // ══════════════════════════════════════════════
+  String? _initError;
+  bool get isInitialized => _initialized;
+  String? get initError => _initError;
 
   void initialize() {
+    if (_initialized) return;
+
     try {
       _model = GenerativeModel(
-        model: 'gemini-3.5-flash', // Updated model name
+        model: 'gemini-3.1-flash-lite', // Using stable model
         apiKey: AppConstants.geminiApiKey,
         systemInstruction: Content.text('''
 You are Smart Cabinet AI Assistant.
@@ -39,21 +53,34 @@ Rules:
 
       // Separate vision model for image analysis
       _visionModel = GenerativeModel(
-        model: 'gemini-3.5-flash',
+        model: 'gemini-3.1-flash-lite',
         apiKey: AppConstants.geminiApiKey,
       );
 
+      _initialized = true;
+      _initError = null;
       debugPrint('✅ Gemini AI initialized successfully');
     } catch (e) {
+      _initialized = false;
+      _initError = e.toString();
       debugPrint('❌ Gemini initialization failed: $e');
     }
   }
 
+  void _ensureInitialized() {
+    if (_model == null) {
+      throw Exception(
+        'AI model not initialized.'
+        '${_initError != null ? ' Reason: $_initError' : ''}',
+      );
+    }
+  }
+
   // ══════════════════════════════════════════════
-  // CORE CHAT
+  // CORE CHAT (ORIGINAL - KEPT)
   // ══════════════════════════════════════════════
   Future<String> chat(String message) async {
-    if (_model == null) throw Exception('AI model not initialized.');
+    _ensureInitialized();
     try {
       final response = await _model!.generateContent([Content.text(message)]);
       return response.text ?? 'No response generated.';
@@ -63,14 +90,14 @@ Rules:
   }
 
   // ══════════════════════════════════════════════
-  // SMART SEARCH
+  // SMART SEARCH (IMPROVED)
   // Used by SearchScreen: detects language, translates,
   // matches cabinet items, and suggests where to buy
   // items that aren't in the cabinet.
   // ══════════════════════════════════════════════
   Future<SmartSearchResult> smartSearch(
       String query, List<String> cabinetItemNames) async {
-    if (_model == null) throw Exception('AI model not initialized.');
+    _ensureInitialized();
 
     final prompt = '''
 User searched for: "$query"
@@ -102,21 +129,69 @@ Rules:
 
     try {
       final response = await _model!.generateContent([Content.text(prompt)]);
-      return _parseSmartSearch(response.text ?? '{}');
+      final result = _parseSmartSearch(response.text ?? '{}');
+
+      // If no items matched and no suggestions, add fallback suggestions
+      if (result.matchedItemNames.isEmpty && result.onlineSuggestions.isEmpty) {
+        return SmartSearchResult(
+          detectedLanguage: result.detectedLanguage,
+          englishTranslation: result.englishTranslation,
+          matchedItemNames: [],
+          relatedInfo: result.relatedInfo.isNotEmpty
+              ? result.relatedInfo
+              : 'Try searching on Shopee, Lazada, or Amazon for this item.',
+          onlineSuggestions: [
+            OnlineSuggestion(
+              platform: 'Shopee',
+              note: 'Popular online marketplace in Malaysia',
+              searchUrl: 'https://shopee.com.my/search?keyword=${Uri.encodeComponent(query)}',
+            ),
+            OnlineSuggestion(
+              platform: 'Lazada',
+              note: 'Wide selection of products',
+              searchUrl: 'https://www.lazada.com.my/catalog/?q=${Uri.encodeComponent(query)}',
+            ),
+            OnlineSuggestion(
+              platform: 'Google',
+              note: 'Search for more options',
+              searchUrl: 'https://www.google.com/search?q=${Uri.encodeComponent(query)}',
+            ),
+          ],
+        );
+      }
+
+      return result;
     } catch (e) {
-      throw Exception('Smart search failed: $e');
+      // Return fallback on error
+      return SmartSearchResult(
+        detectedLanguage: 'en',
+        englishTranslation: query,
+        matchedItemNames: [],
+        relatedInfo: 'Could not search. Try typing in English.',
+        onlineSuggestions: [
+          OnlineSuggestion(
+            platform: 'Shopee',
+            note: 'Malaysia online shopping',
+            searchUrl: 'https://shopee.com.my/search?keyword=${Uri.encodeComponent(query)}',
+          ),
+        ],
+      );
     }
   }
 
   // ══════════════════════════════════════════════
-  // AUTO-FILL FROM IMAGE
+  // AUTO-FILL FROM IMAGE (IMPROVED)
   // Supervisor Req 6: AI recognises items from photo
+  //
+  // FIX #2: image bytes are now read ONCE and passed
+  // down to the fallback instead of re-reading the same
+  // file from disk a second time.
   // ══════════════════════════════════════════════
   Future<ItemAutoFill> autoFillFromImage(File imageFile) async {
-    if (_visionModel == null) throw Exception('AI model not initialized.');
+    _ensureInitializedVision();
 
     final imageBytes = await imageFile.readAsBytes();
-    final mimeType   = _getMimeType(imageFile.path);
+    final mimeType = _getMimeType(imageFile.path);
 
     const prompt = '''
 Look at this item image carefully.
@@ -136,6 +211,8 @@ Extract all visible information and return ONLY this JSON (no markdown, no backt
 Rules:
 - name is required — make your best guess from the image
 - Look carefully for expiry dates: EXP, Best Before, BB, Use By, 到期
+- For medicine, look for dosage information
+- For food, look for weight/volume
 - Return ONLY the JSON, nothing else
 ''';
 
@@ -143,23 +220,75 @@ Rules:
       final response = await _visionModel!.generateContent([
         Content.multi([DataPart(mimeType, imageBytes), TextPart(prompt)]),
       ]);
-      return _parseAutoFill(response.text ?? '{}');
+      final result = _parseAutoFill(response.text ?? '{}');
+
+      // If name is empty, try a more general prompt.
+      // Reuse the bytes we already read instead of hitting disk again.
+      if (result.name.isEmpty) {
+        return _autoFillFromImageFallback(imageBytes, mimeType);
+      }
+
+      return result;
     } catch (e) {
-      throw Exception('Image analysis failed: $e');
+      // Fallback to name-based auto-fill if image analysis fails
+      debugPrint('Image analysis failed: $e');
+      try {
+        return await _autoFillFromImageFallback(imageBytes, mimeType);
+      } catch (_) {
+        return ItemAutoFill.empty();
+      }
+    }
+  }
+
+  // Fallback for image analysis.
+  // Now takes already-read bytes + mimeType instead of a File,
+  // so we never read the same image off disk twice.
+  Future<ItemAutoFill> _autoFillFromImageFallback(
+      Uint8List imageBytes, String mimeType) async {
+    const prompt = '''
+Describe what you see in this image.
+Return ONLY this JSON (no markdown):
+{
+  "name": "what is this item?",
+  "category": "Medicine/Food/Drinks/Tools/Others",
+  "description": "brief description"
+}
+''';
+
+    try {
+      final response = await _visionModel!.generateContent([
+        Content.multi([DataPart(mimeType, imageBytes), TextPart(prompt)]),
+      ]);
+      final result = _parseAutoFill(response.text ?? '{}');
+      return ItemAutoFill(
+        name: result.name,
+        brand: '',
+        description: result.description,
+        category: result.category,
+        quantity: 1,
+        unit: 'pcs',
+        expiryDate: null,
+        productionDate: null,
+        note: '',
+        tags: [],
+      );
+    } catch (e) {
+      return ItemAutoFill.empty();
     }
   }
 
   // ══════════════════════════════════════════════
-  // AUTO-FILL FROM NAME
+  // AUTO-FILL FROM NAME (IMPROVED)
   // ══════════════════════════════════════════════
   Future<ItemAutoFill> autoFillFromName(String itemName) async {
-    if (_model == null) throw Exception('AI model not initialized.');
+    _ensureInitialized();
+
     final prompt = '''
 The user is adding an item called: "$itemName"
 Return ONLY this JSON (no markdown, no backticks):
 {
   "name": "$itemName",
-  "brand": "",
+  "brand": "typical brand or manufacturer for this item, empty if unknown",
   "description": "brief description of what this item typically is",
   "category": "one of: Medicine, Food, Drinks, Tools, Documents, Electronics, Clothing, Others",
   "quantity": 1,
@@ -167,28 +296,142 @@ Return ONLY this JSON (no markdown, no backticks):
   "expiry_date": "",
   "production_date": "",
   "note": "brief storage tip or important note for this item type",
-  "tags": ["relevant", "tags"]
+  "tags": ["relevant", "tags", "here"]
 }
+
+If this looks like a medicine, add "medicine" as a tag.
+If it's food, add "food", "perishable" or "non-perishable".
 Return ONLY the JSON, nothing else.
 ''';
     try {
       final response = await _model!.generateContent([Content.text(prompt)]);
-      return _parseAutoFill(response.text ?? '{}');
+      final result = _parseAutoFill(response.text ?? '{}');
+
+      // If category is empty, try to guess from name
+      if (result.category.isEmpty) {
+        return _guessCategoryFromName(itemName);
+      }
+
+      return result;
     } catch (e) {
-      throw Exception('Auto-fill from name failed: $e');
+      return _guessCategoryFromName(itemName);
     }
   }
 
+  // Fallback category guessing
+  ItemAutoFill _guessCategoryFromName(String name) {
+    final lowerName = name.toLowerCase();
+    String category = 'Others';
+    List<String> tags = [];
+
+    // Medicine detection
+    if (lowerName.contains('medicine') ||
+        lowerName.contains('药') ||
+        lowerName.contains('tablet') ||
+        lowerName.contains('capsule') ||
+        lowerName.contains('syrup') ||
+        lowerName.contains('ointment') ||
+        lowerName.contains('cream') ||
+        lowerName.contains('pill')) {
+      category = 'Medicine';
+      tags.add('medicine');
+    }
+    // Food detection
+    else if (lowerName.contains('food') ||
+        lowerName.contains('snack') ||
+        lowerName.contains('canned') ||
+        lowerName.contains('包') ||
+        lowerName.contains('食')) {
+      category = 'Food';
+      tags.add('food');
+    }
+    // Drinks detection
+    else if (lowerName.contains('drink') ||
+        lowerName.contains('饮料') ||
+        lowerName.contains('water') ||
+        lowerName.contains('juice') ||
+        lowerName.contains('soda') ||
+        lowerName.contains('tea') ||
+        lowerName.contains('coffee')) {
+      category = 'Drinks';
+      tags.add('drink');
+    }
+    // Tools detection
+    else if (lowerName.contains('tool') ||
+        lowerName.contains('工具') ||
+        lowerName.contains('hammer') ||
+        lowerName.contains('screw') ||
+        lowerName.contains('drill') ||
+        lowerName.contains('wrench')) {
+      category = 'Tools';
+      tags.add('tool');
+    }
+    // Documents detection
+    else if (lowerName.contains('document') ||
+        lowerName.contains('文件') ||
+        lowerName.contains('paper') ||
+        lowerName.contains('file') ||
+        lowerName.contains('folder')) {
+      category = 'Documents';
+      tags.add('document');
+    }
+    // Electronics detection
+    else if (lowerName.contains('electronic') ||
+        lowerName.contains('电') ||
+        lowerName.contains('battery') ||
+        lowerName.contains('cable') ||
+        lowerName.contains('charger') ||
+        lowerName.contains('phone')) {
+      category = 'Electronics';
+      tags.add('electronics');
+    }
+    // Clothing detection
+    else if (lowerName.contains('clothing') ||
+        lowerName.contains('cloth') ||
+        lowerName.contains('shirt') ||
+        lowerName.contains('pants') ||
+        lowerName.contains('shoes') ||
+        lowerName.contains('衣服')) {
+      category = 'Clothing';
+      tags.add('clothing');
+    }
+
+    return ItemAutoFill(
+      name: name,
+      brand: '',
+      description: '',
+      category: category,
+      quantity: 1,
+      unit: 'pcs',
+      expiryDate: null,
+      productionDate: null,
+      note: '',
+      tags: tags,
+    );
+  }
+
   // ══════════════════════════════════════════════
-  // AI COUNT ITEMS FROM PHOTO
+  // AI COUNT ITEMS FROM PHOTO (IMPROVED)
   // Supervisor Req 6: Count quantity (PCS) from photo
+  //
+  // FIX #3: previously ANY count of 0 triggered a retry
+  // with a looser prompt, even when 0 was the correct
+  // answer (no items visible). That conflated "the model
+  // failed to parse" with "the model legitimately found
+  // nothing" and could overwrite a correct zero with a
+  // wrong nonzero guess from the fallback prompt.
+  //
+  // Now: _parseAiCount returns null when the response
+  // genuinely couldn't be parsed (missing/invalid JSON).
+  // We only fall back on that — a parsed, low-confidence,
+  // or zero count is trusted and returned as-is.
   // ══════════════════════════════════════════════
   Future<AiCountResult> countItemsFromPhoto(
       File imageFile, String itemName) async {
-    if (_visionModel == null) throw Exception('AI model not initialized.');
+    _ensureInitializedVision();
 
     final imageBytes = await imageFile.readAsBytes();
-    final mimeType   = _getMimeType(imageFile.path);
+    final mimeType = _getMimeType(imageFile.path);
 
     final prompt = '''
 Look at this image carefully.
@@ -199,6 +442,8 @@ Rules:
 - Do not count partial items unless clearly identifiable
 - If stacked, estimate based on visible layers
 - If image is unclear, return low confidence
+- For small items (pills, tablets), count visible individual units
+- For larger items, count each visible unit
 
 Return ONLY this JSON (no markdown, no backticks):
 {
@@ -217,14 +462,63 @@ Where:
       final response = await _visionModel!.generateContent([
         Content.multi([DataPart(mimeType, imageBytes), TextPart(prompt)]),
       ]);
-      return _parseAiCount(response.text ?? '{}');
+      final result = _parseAiCount(response.text ?? '');
+
+      // Only fall back when the response genuinely could not be parsed —
+      // NOT just because the parsed count happens to be zero.
+      if (result == null) {
+        return _countItemsFromPhotoFallback(imageFile, itemName);
+      }
+
+      return result;
     } catch (e) {
-      throw Exception('AI count failed: $e');
+      debugPrint('AI count error: $e');
+      return AiCountResult(
+        count: 0,
+        confidence: 0.0,
+        notes: 'Unable to count items. Please count manually.',
+      );
+    }
+  }
+
+  // Fallback for counting — only reached on genuine parse/response failure.
+  Future<AiCountResult> _countItemsFromPhotoFallback(
+      File imageFile, String itemName) async {
+    final imageBytes = await imageFile.readAsBytes();
+    final mimeType = _getMimeType(imageFile.path);
+
+    final prompt = '''
+Can you see any "$itemName" in this image?
+If yes, approximately how many? Make your best estimate.
+Return ONLY JSON:
+{
+  "count": 0,
+  "confidence": 0.0,
+  "notes": "description of what you see"
+}
+''';
+
+    try {
+      final response = await _visionModel!.generateContent([
+        Content.multi([DataPart(mimeType, imageBytes), TextPart(prompt)]),
+      ]);
+      return _parseAiCount(response.text ?? '') ??
+          AiCountResult(
+            count: 0,
+            confidence: 0.0,
+            notes: 'Could not parse response.',
+          );
+    } catch (e) {
+      return AiCountResult(
+        count: 0,
+        confidence: 0.0,
+        notes: 'Could not detect items in image.',
+      );
     }
   }
 
   // ══════════════════════════════════════════════
-  // HELP & SUPPORT AI ANSWER
+  // HELP & SUPPORT AI ANSWER (ORIGINAL - KEPT)
   // ══════════════════════════════════════════════
   Future<String> getHelpAnswer(String question) async {
     final prompt = '''
@@ -241,11 +535,11 @@ Answer helpfully and concisely. Give step-by-step instructions for app questions
   }
 
   // ══════════════════════════════════════════════
-  // MEDICINE INFO — full structured response
+  // MEDICINE INFO — full structured response (IMPROVED)
   // Bilingual: English + Chinese (中文)
   // ══════════════════════════════════════════════
   Future<MedicineInfo> getMedicineInfo(String medicineName) async {
-    if (_model == null) throw Exception('AI model not initialized.');
+    _ensureInitialized();
 
     final prompt = '''
 You are a professional pharmacist assistant. Provide comprehensive information
@@ -275,71 +569,128 @@ Rules:
 
     try {
       final response = await _model!.generateContent([Content.text(prompt)]);
+      final result = _parseMedicineInfo(response.text ?? '{}', medicineName);
+
+      // If no information found, try a simpler query
+      if (result.name == medicineName && result.purpose.isEmpty) {
+        return _getMedicineInfoFallback(medicineName);
+      }
+
+      return result;
+    } catch (e) {
+      debugPrint('Medicine info error: $e');
+      return _getMedicineInfoFallback(medicineName);
+    }
+  }
+
+  // Fallback for medicine info
+  Future<MedicineInfo> _getMedicineInfoFallback(String medicineName) async {
+    final prompt = '''
+Tell me about: $medicineName
+
+Return ONLY JSON:
+{
+  "name": "$medicineName",
+  "chinese_name": "",
+  "purpose": "brief description of what this medicine is used for",
+  "dosage": "typical dosage information",
+  "side_effects": "common side effects",
+  "contraindications": "who should avoid this medicine",
+  "storage": "storage recommendations",
+  "alternatives": "similar medicines",
+  "warnings": "important warnings"
+}
+''';
+
+    try {
+      final response = await _model!.generateContent([Content.text(prompt)]);
       return _parseMedicineInfo(response.text ?? '{}', medicineName);
     } catch (e) {
-      throw Exception('Medicine info fetch failed: $e');
+      return MedicineInfo(
+        name: medicineName,
+        chineseName: '',
+        purpose: 'Information not available. Please consult a healthcare professional.',
+        dosage: 'Please consult a pharmacist or doctor.',
+        sideEffects: 'Not available.',
+        contraindications: 'Not available.',
+        storage: 'Not available.',
+        alternatives: 'Not available.',
+        warnings: 'Always consult a healthcare professional before taking any medication.',
+      );
     }
   }
 
   MedicineInfo _parseMedicineInfo(String raw, String fallbackName) {
     try {
-      String clean = raw.trim()
-          .replaceAll(RegExp(r'```json|```'), '').trim();
+      String clean = raw.trim().replaceAll(RegExp(r'```json|```'), '').trim();
       final start = clean.indexOf('{');
-      final end   = clean.lastIndexOf('}');
+      final end = clean.lastIndexOf('}');
       if (start == -1 || end == -1) {
         return MedicineInfo(
-          name: fallbackName, chineseName: '', purpose: raw,
-          dosage: '', sideEffects: '', contraindications: '',
-          storage: '', alternatives: '', warnings: '');
+            name: fallbackName,
+            chineseName: '',
+            purpose: raw,
+            dosage: '',
+            sideEffects: '',
+            contraindications: '',
+            storage: '',
+            alternatives: '',
+            warnings: '');
       }
-      final json = jsonDecode(clean.substring(start, end + 1))
-          as Map<String, dynamic>;
+      final json =
+          jsonDecode(clean.substring(start, end + 1)) as Map<String, dynamic>;
       return MedicineInfo(
-        name:              (json['name']              as String?) ?? fallbackName,
-        chineseName:       (json['chinese_name']      as String?) ?? '',
-        purpose:           (json['purpose']           as String?) ?? '',
-        dosage:            (json['dosage']            as String?) ?? '',
-        sideEffects:       (json['side_effects']      as String?) ?? '',
+        name: (json['name'] as String?) ?? fallbackName,
+        chineseName: (json['chinese_name'] as String?) ?? '',
+        purpose: (json['purpose'] as String?) ?? '',
+        dosage: (json['dosage'] as String?) ?? '',
+        sideEffects: (json['side_effects'] as String?) ?? '',
         contraindications: (json['contraindications'] as String?) ?? '',
-        storage:           (json['storage']           as String?) ?? '',
-        alternatives:      (json['alternatives']      as String?) ?? '',
-        warnings:          (json['warnings']          as String?) ?? '',
+        storage: (json['storage'] as String?) ?? '',
+        alternatives: (json['alternatives'] as String?) ?? '',
+        warnings: (json['warnings'] as String?) ?? '',
       );
     } catch (e) {
+      debugPrint('Medicine parse error: $e');
       return MedicineInfo(
-        name: fallbackName, chineseName: '', purpose: raw,
-        dosage: '', sideEffects: '', contraindications: '',
-        storage: '', alternatives: '', warnings: '');
+          name: fallbackName,
+          chineseName: '',
+          purpose: raw,
+          dosage: '',
+          sideEffects: '',
+          contraindications: '',
+          storage: '',
+          alternatives: '',
+          warnings: '');
     }
   }
 
   // ══════════════════════════════════════════════
-  // PARSE HELPERS
+  // PARSE HELPERS (IMPROVED)
   // ══════════════════════════════════════════════
   ItemAutoFill _parseAutoFill(String raw) {
     try {
-      String clean = raw.trim()
-          .replaceAll(RegExp(r'```json|```'), '').trim();
+      String clean = raw.trim().replaceAll(RegExp(r'```json|```'), '').trim();
       final start = clean.indexOf('{');
-      final end   = clean.lastIndexOf('}');
+      final end = clean.lastIndexOf('}');
       if (start == -1 || end == -1) return ItemAutoFill.empty();
-      final json = jsonDecode(clean.substring(start, end + 1))
-          as Map<String, dynamic>;
+      final json =
+          jsonDecode(clean.substring(start, end + 1)) as Map<String, dynamic>;
       return ItemAutoFill(
-        name:           (json['name']        as String?)?.trim() ?? '',
-        brand:          (json['brand']       as String?)?.trim() ?? '',
-        description:    (json['description'] as String?)?.trim() ?? '',
-        category:       (json['category']    as String?)?.trim() ?? '',
-        quantity:       (json['quantity'] as num?)?.toInt() ?? 1,
-        unit:           (json['unit']        as String?)?.trim() ?? 'pcs',
-        expiryDate:     _parseDate(json['expiry_date']),
+        name: (json['name'] as String?)?.trim() ?? '',
+        brand: (json['brand'] as String?)?.trim() ?? '',
+        description: (json['description'] as String?)?.trim() ?? '',
+        category: (json['category'] as String?)?.trim() ?? '',
+        quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+        unit: (json['unit'] as String?)?.trim() ?? 'pcs',
+        expiryDate: _parseDate(json['expiry_date']),
         productionDate: _parseDate(json['production_date']),
-        note:           (json['note']        as String?)?.trim() ?? '',
+        note: (json['note'] as String?)?.trim() ?? '',
         tags: (json['tags'] as List<dynamic>?)
                 ?.map((t) => t.toString().trim())
                 .where((t) => t.isNotEmpty)
-                .toList() ?? [],
+                .toList() ??
+            [],
       );
     } catch (e) {
       debugPrint('AutoFill parse error: $e\nRaw: $raw');
@@ -347,58 +698,63 @@ Rules:
     }
   }
 
-  AiCountResult _parseAiCount(String raw) {
+  // FIX #3 (parser side): returns null when the response could not be
+  // parsed at all (no valid JSON found / decode error), instead of
+  // silently returning a zero-count result that looks identical to a
+  // legitimate "0 items found" answer. Callers use the null to decide
+  // whether a retry is warranted.
+  AiCountResult? _parseAiCount(String raw) {
     try {
-      String clean = raw.trim()
-          .replaceAll(RegExp(r'```json|```'), '').trim();
+      String clean = raw.trim().replaceAll(RegExp(r'```json|```'), '').trim();
       final start = clean.indexOf('{');
-      final end   = clean.lastIndexOf('}');
+      final end = clean.lastIndexOf('}');
       if (start == -1 || end == -1) {
-        return AiCountResult(
-            count: 0, confidence: 0, notes: 'Could not parse response');
+        debugPrint('AI count: no JSON object found in response');
+        return null;
       }
-      final json = jsonDecode(clean.substring(start, end + 1))
-          as Map<String, dynamic>;
+      final json =
+          jsonDecode(clean.substring(start, end + 1)) as Map<String, dynamic>;
       return AiCountResult(
-        count:      (json['count']      as num?)?.toInt()    ?? 0,
+        count: (json['count'] as num?)?.toInt() ?? 0,
         confidence: (json['confidence'] as num?)?.toDouble() ?? 0.0,
-        notes:      (json['notes']      as String?)          ?? '',
+        notes: (json['notes'] as String?) ?? '',
       );
     } catch (e) {
-      return AiCountResult(count: 0, confidence: 0, notes: 'Parse error: $e');
+      debugPrint('AI count parse error: $e');
+      return null;
     }
   }
 
   SmartSearchResult _parseSmartSearch(String raw) {
     try {
-      String clean = raw.trim()
-          .replaceAll(RegExp(r'```json|```'), '').trim();
+      String clean = raw.trim().replaceAll(RegExp(r'```json|```'), '').trim();
       final start = clean.indexOf('{');
-      final end   = clean.lastIndexOf('}');
+      final end = clean.lastIndexOf('}');
       if (start == -1 || end == -1) return SmartSearchResult.empty();
 
-      final json = jsonDecode(clean.substring(start, end + 1))
-          as Map<String, dynamic>;
+      final json =
+          jsonDecode(clean.substring(start, end + 1)) as Map<String, dynamic>;
 
       final suggestionsRaw = (json['online_suggestions'] as List<dynamic>?) ?? [];
       final suggestions = suggestionsRaw
           .whereType<Map<String, dynamic>>()
           .map((m) => OnlineSuggestion(
-                platform:  (m['platform']   as String?)?.trim() ?? '',
-                note:      (m['note']       as String?)?.trim() ?? '',
+                platform: (m['platform'] as String?)?.trim() ?? '',
+                note: (m['note'] as String?)?.trim() ?? '',
                 searchUrl: (m['search_url'] as String?)?.trim() ?? '',
               ))
           .where((s) => s.platform.isNotEmpty)
           .toList();
 
       return SmartSearchResult(
-        detectedLanguage:   (json['detected_language']   as String?)?.trim() ?? '',
+        detectedLanguage: (json['detected_language'] as String?)?.trim() ?? '',
         englishTranslation: (json['english_translation'] as String?)?.trim() ?? '',
         matchedItemNames: (json['matched_item_names'] as List<dynamic>?)
                 ?.map((e) => e.toString().trim())
                 .where((e) => e.isNotEmpty)
-                .toList() ?? [],
-        relatedInfo:      (json['related_info'] as String?)?.trim() ?? '',
+                .toList() ??
+            [],
+        relatedInfo: (json['related_info'] as String?)?.trim() ?? '',
         onlineSuggestions: suggestions,
       );
     } catch (e) {
@@ -409,24 +765,44 @@ Rules:
 
   DateTime? _parseDate(dynamic value) {
     if (value == null || value.toString().isEmpty) return null;
-    try { return DateTime.parse(value.toString()); }
-    catch (_) { return null; }
+    try {
+      return DateTime.parse(value.toString());
+    } catch (_) {
+      return null;
+    }
   }
 
   String _getMimeType(String path) {
     final ext = path.split('.').last.toLowerCase();
     switch (ext) {
-      case 'jpg': case 'jpeg': return 'image/jpeg';
-      case 'png':              return 'image/png';
-      case 'webp':             return 'image/webp';
-      case 'heic':             return 'image/heic';
-      default:                 return 'image/jpeg';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  void _ensureInitializedVision() {
+    if (_visionModel == null) {
+      throw Exception(
+        'AI model not initialized.'
+        '${_initError != null ? ' Reason: $_initError' : ''}',
+      );
     }
   }
 
   // ══════════════════════════════════════════════
-  // EXISTING METHODS (kept exactly as original)
+  // EXISTING METHODS (KEPT EXACTLY AS ORIGINAL)
   // ══════════════════════════════════════════════
+
+  // ORIGINAL - extractMedicineInfo
   Future<String> extractMedicineInfo(String text) async {
     final prompt = '''
 Extract medicine information from the text below.
@@ -445,6 +821,7 @@ $text
     return await chat(prompt);
   }
 
+  // ORIGINAL - suggestCategory
   Future<String> suggestCategory(String itemName) async {
     final prompt = '''
 Item: $itemName
@@ -455,6 +832,7 @@ Return only the category name.
     return await chat(prompt);
   }
 
+  // ORIGINAL - getExpiryPrediction
   Future<String> getExpiryPrediction(String itemName) async {
     final prompt = '''
 What is the typical shelf life of: $itemName
@@ -466,6 +844,7 @@ Provide:
     return await chat(prompt);
   }
 
+  // ORIGINAL - suggestStorage
   Future<String> suggestStorage(String itemName) async {
     final prompt = '''
 Suggest the best way to store: $itemName
@@ -474,6 +853,7 @@ Include: Temperature, Humidity, Sunlight exposure, Important notes
     return await chat(prompt);
   }
 
+  // ORIGINAL - organizeCabinet
   Future<String> organizeCabinet(List<String> items) async {
     final prompt = '''
 These are the current cabinet items: ${items.join(", ")}
@@ -485,6 +865,7 @@ Suggest:
     return await chat(prompt);
   }
 
+  // ORIGINAL - suggestReplacement
   Future<String> suggestReplacement(String itemName) async {
     final prompt = '''
 Suggest alternatives or replacements for: $itemName
@@ -493,6 +874,7 @@ Include: Similar items, Uses, Storage recommendations.
     return await chat(prompt);
   }
 
+  // ORIGINAL - explainMedicine
   Future<String> explainMedicine(String medicineName) async {
     final prompt = '''
 Explain the medicine: $medicineName
@@ -502,6 +884,7 @@ Keep the explanation brief.
     return await chat(prompt);
   }
 
+  // ORIGINAL - summarizeItems
   Future<String> summarizeItems(List<String> items) async {
     final prompt = '''
 These are the cabinet contents: ${items.join(", ")}
@@ -514,6 +897,7 @@ Provide:
     return await chat(prompt);
   }
 
+  // ORIGINAL - findItem
   Future<String> findItem(
       String itemName, String cabinetName, String boxName) async {
     final prompt = '''
@@ -528,7 +912,7 @@ Generate a natural response telling the user where the item is.
 }
 
 // ══════════════════════════════════════════════
-// DATA CLASSES
+// DATA CLASSES (KEPT EXACTLY AS ORIGINAL)
 // ══════════════════════════════════════════════
 
 class ItemAutoFill {
@@ -551,8 +935,14 @@ class ItemAutoFill {
   });
 
   factory ItemAutoFill.empty() => const ItemAutoFill(
-      name: '', brand: '', description: '', category: '',
-      quantity: 1, unit: 'pcs', note: '', tags: []);
+      name: '',
+      brand: '',
+      description: '',
+      category: '',
+      quantity: 1,
+      unit: 'pcs',
+      note: '',
+      tags: []);
 
   bool get isEmpty => name.isEmpty && description.isEmpty;
 }
@@ -592,6 +982,8 @@ class MedicineInfo {
     required this.warnings,
   });
 
+  // FIX #7 (cosmetic): removed the stray space before the colon on
+  // "ALTERNATIVES" and "WARNINGS" so all section headers are consistent.
   String toPlainText() => '''
 $name${chineseName.isNotEmpty ? ' ($chineseName)' : ''}
 
@@ -610,10 +1002,10 @@ $contraindications
 STORAGE:
 $storage
 
-ALTERNATIVES :
+ALTERNATIVES:
 $alternatives
 
-WARNINGS :
+WARNINGS:
 $warnings
 
 ---
@@ -621,9 +1013,6 @@ For reference only. Consult a pharmacist or doctor before taking any medication.
 ''';
 }
 
-/// Result of AIService.smartSearch() — used by SearchScreen to show
-/// language detection, matched cabinet items, related info, and
-/// "where to buy" suggestions when an item isn't in the cabinet.
 class SmartSearchResult {
   final String detectedLanguage;
   final String englishTranslation;
@@ -640,15 +1029,14 @@ class SmartSearchResult {
   });
 
   factory SmartSearchResult.empty() => const SmartSearchResult(
-    detectedLanguage: '',
-    englishTranslation: '',
-    matchedItemNames: [],
-    relatedInfo: '',
-    onlineSuggestions: [],
-  );
+        detectedLanguage: '',
+        englishTranslation: '',
+        matchedItemNames: [],
+        relatedInfo: '',
+        onlineSuggestions: [],
+      );
 }
 
-/// A single "where to buy" suggestion shown in the Smart Search results.
 class OnlineSuggestion {
   final String platform;
   final String note;

@@ -8,7 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'firebase_options.dart';
 import 'config/app_constants.dart';
-import 'l10n/l10n.dart';  // ← S class only
+import 'l10n/l10n.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
@@ -53,6 +53,7 @@ import 'screens/smart_cabinet_control_screen.dart';
 import 'screens/workflows_screen.dart';
 import 'screens/door_status_screen.dart';
 import 'screens/notification_settings_screen.dart';
+import 'screens/tag_management_screen.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -64,7 +65,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  
+
   final prefs = await SharedPreferences.getInstance();
 
   await NotificationService().initialize();
@@ -99,12 +100,11 @@ class SmartCabinetApp extends StatelessWidget {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: AppConstants.appName,
-            
+
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
 
-            // ✅ Use S.delegate from l10n.dart
             locale: languageProvider.locale,
             supportedLocales: S.delegate.supportedLocales,
             localizationsDelegates: const [
@@ -113,7 +113,7 @@ class SmartCabinetApp extends StatelessWidget {
               GlobalCupertinoLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
             ],
-            
+
             localeResolutionCallback: (locale, supportedLocales) {
               for (final supportedLocale in supportedLocales) {
                 if (supportedLocale.languageCode == locale?.languageCode) {
@@ -138,7 +138,7 @@ class SmartCabinetApp extends StatelessWidget {
               '/add-item': (context) => const AddEditItemScreen(),
               '/add-category': (context) => const AddEditCategoryScreen(),
               '/add-cabinet': (context) => const AddEditCabinetScreen(),
-              
+              '/manage-tags': (context) => TagManagementScreen(),
               '/item-detail': (context) {
                 final args = ModalRoute.of(context)?.settings.arguments;
                 if (args is ItemModel) {
@@ -157,7 +157,6 @@ class SmartCabinetApp extends StatelessWidget {
                   ),
                 );
               },
-              
               '/cabinet-detail': (context) {
                 final args = ModalRoute.of(context)?.settings.arguments;
                 if (args is String) {
@@ -167,7 +166,6 @@ class SmartCabinetApp extends StatelessWidget {
                   body: Center(child: Text('Cabinet not found')),
                 );
               },
-              
               '/share-cabinet': (context) {
                 final args = ModalRoute.of(context)?.settings.arguments;
                 if (args is Map<String, String>) {
@@ -180,7 +178,6 @@ class SmartCabinetApp extends StatelessWidget {
                   body: Center(child: Text('Cabinet not found')),
                 );
               },
-              
               '/shared-cabinets': (context) => const SharedCabinetsScreen(),
               '/ai-chat': (context) => const AIChatScreen(),
               '/help-support': (context) => const HelpSupportScreen(),

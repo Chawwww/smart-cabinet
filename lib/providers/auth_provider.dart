@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 
@@ -14,6 +15,7 @@ enum AuthStatus {
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   UserModel? _currentUser;
   AuthStatus _status = AuthStatus.unauthenticated;
@@ -21,17 +23,7 @@ class AuthProvider extends ChangeNotifier {
   
   StreamSubscription<User?>? _authSubscription;
 
-  // ✅ Callbacks for logout — a LIST so every provider that registers
-  // (item, category, cabinet, ...) actually gets called. A single
-  // VoidCallback? was silently overwritten by whichever provider
-  // registered last, which is why clearData() wasn't consistent.
   final List<VoidCallback> _onLogoutCallbacks = [];
-
-  // Resolves once the authStateChanges listener has finished processing
-  // the CURRENT auth transition (success or failure). Manual methods
-  // (login/register/etc.) await this instead of independently calling
-  // getUserData() and setting _status themselves — that duplicate path
-  // is what caused isLoggedIn to race and flip randomly.
   Completer<bool>? _pendingResolution;
 
   // ── Getters ──────────────────────────────────────────────
@@ -43,9 +35,6 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get userId => _authService.currentUserId;
 
-  // ✅ Register a logout callback. Safe to call multiple times — each
-  // provider (item, category, cabinet, ...) should call this once with
-  // its own clearData. All of them will run on logout, not just the last.
   void setOnLogout(VoidCallback callback) {
     _onLogoutCallbacks.add(callback);
   }
@@ -69,12 +58,12 @@ class AuthProvider extends ChangeNotifier {
             _status = AuthStatus.authenticated;
             _errorMessage = null;
             debugPrint('✅ User loaded: ${_currentUser?.name} (${_currentUser?.email})');
+            debugPrint('📸 Avatar URL: ${_currentUser?.avatar}'); // ✅ ADDED DEBUG
           } else {
             _status = AuthStatus.error;
             _errorMessage = 'Failed to load user data';
           }
         } else {
-          // ✅ Clear user data on logout
           _currentUser = null;
           _status = AuthStatus.unauthenticated;
           _errorMessage = null;
@@ -92,19 +81,12 @@ class AuthProvider extends ChangeNotifier {
     );
   }
 
-  // Called by the stream listener when it finishes processing a
-  // transition. Wakes up whichever manual method (login/register/etc.)
-  // is currently waiting, so there's only ONE place deciding the final
-  // _status for a given sign-in — no more racing.
   void _resolvePending() {
     if (_pendingResolution != null && !_pendingResolution!.isCompleted) {
       _pendingResolution!.complete(_status == AuthStatus.authenticated);
     }
   }
 
-  // Waits for the authStateChanges listener to settle after a manual
-  // sign-in call. Times out defensively so the UI never hangs forever
-  // if the stream is slow to fire.
   Future<bool> _awaitResolution() {
     _pendingResolution = Completer<bool>();
     return _pendingResolution!.future.timeout(
@@ -126,6 +108,7 @@ class AuthProvider extends ChangeNotifier {
         _status = AuthStatus.authenticated;
         _errorMessage = null;
         debugPrint('✅ Check auth: ${_currentUser?.name}');
+        debugPrint('📸 Avatar URL: ${_currentUser?.avatar}'); // ✅ ADDED DEBUG
         notifyListeners();
         return true;
       }
@@ -134,6 +117,60 @@ class AuthProvider extends ChangeNotifier {
     _currentUser = null;
     notifyListeners();
     return false;
+  }
+
+  // ── Update Full Profile ──────────────────────────────────
+  Future<void> updateFullProfile({
+    String? name,
+    String? avatar,
+    DateTime? dateOfBirth,
+    String? bio,
+    List<String>? interests,
+    bool? isPublic,
+    String? location,
+    String? phoneNumber,
+    String? website,
+    Map<String, dynamic>? settings,
+  }) async {
+    try {
+      final user = _authService.currentUser;
+      if (user == null) throw Exception('User not logged in');
+      
+      final updates = <String, dynamic>{};
+      
+      if (name != null) {
+        updates['name'] = name;
+        await user.updateDisplayName(name);
+      }
+      
+      if (avatar != null) {
+        updates['avatar'] = avatar;
+        await user.updatePhotoURL(avatar);
+      }
+      
+      if (dateOfBirth != null) {
+        updates['dateOfBirth'] = Timestamp.fromDate(dateOfBirth);
+      }
+      
+      if (bio != null) updates['bio'] = bio;
+      if (interests != null) updates['interests'] = interests;
+      if (isPublic != null) updates['isPublic'] = isPublic;
+      if (location != null) updates['location'] = location;
+      if (phoneNumber != null) updates['phoneNumber'] = phoneNumber;
+      if (website != null) updates['website'] = website;
+      if (settings != null) updates['settings'] = settings;
+      
+      updates['updatedAt'] = FieldValue.serverTimestamp();
+      
+      await _firestore.collection('users').doc(user.uid).update(updates);
+      
+      // Refresh local user data
+      await refreshUserData();
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      throw Exception('Failed to update profile: $e');
+    }
   }
 
   // ── Google Sign-In ──────────────────────────────────────
@@ -150,10 +187,6 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      // Don't independently re-fetch user data here — the
-      // authStateChanges listener in _init() will already be doing that
-      // for this same sign-in event. Just wait for it to settle so we
-      // don't have two code paths racing to set _status.
       return await _awaitResolution();
     } catch (e) {
       _status = AuthStatus.error;
@@ -185,9 +218,6 @@ class AuthProvider extends ChangeNotifier {
         name: name,
       );
 
-      // Let the authStateChanges listener load the newly created user
-      // doc and set status — avoids the same duplicate-write race as
-      // sign-in.
       return await _awaitResolution();
     } catch (e) {
       _status = AuthStatus.error;
@@ -396,18 +426,14 @@ class AuthProvider extends ChangeNotifier {
       _status = AuthStatus.authenticating;
       notifyListeners();
       
-      // ✅ Clear local data first
       _currentUser = null;
       _status = AuthStatus.unauthenticated;
       _errorMessage = null;
       
-      // ✅ Call every registered logout callback to clear provider data
-      // (item, category, cabinet, ...) — not just the last one registered.
       for (final callback in _onLogoutCallbacks) {
         callback();
       }
       
-      // Then sign out from Firebase
       await _authService.signOut();
       
       debugPrint('🔴 Logout complete - user data cleared');
@@ -437,6 +463,7 @@ class AuthProvider extends ChangeNotifier {
         _currentUser = UserModel.fromMap(data, user.uid);
         _status = AuthStatus.authenticated;
         debugPrint('🔄 User data refreshed: ${_currentUser?.name}');
+        debugPrint('📸 Avatar URL: ${_currentUser?.avatar}'); // ✅ ADDED DEBUG
         notifyListeners();
       }
     }

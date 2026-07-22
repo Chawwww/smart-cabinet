@@ -1,4 +1,5 @@
-import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ ADDED for token storage
+// lib/services/notification_service.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -7,27 +8,26 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
-  static final NotificationService _instance =
-      NotificationService._internal();
+  static final NotificationService _instance = NotificationService._internal();
 
   factory NotificationService() => _instance;
 
   NotificationService._internal();
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
-
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
-
-  // ✅ ADDED: was missing — registerFcmToken/unregisterFcmToken reference
-  // this but it was never declared, causing "getter '_db' isn't defined".
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  bool _initialized = false;
 
   //-------------------------------------------------------
   // Initialize
   //-------------------------------------------------------
 
   Future<void> initialize() async {
+    if (_initialized) return;
+
     try {
       tz.initializeTimeZones();
 
@@ -46,6 +46,7 @@ class NotificationService {
         iOS: iosSettings,
       );
 
+      // ✅ FIX: Use named parameter for initialize
       await _localNotifications.initialize(
         settings: settings,
         onDidReceiveNotificationResponse: _onNotificationTap,
@@ -59,16 +60,16 @@ class NotificationService {
           debugPrint('Notification opened: ${message.data}');
         },
       );
+
+      _initialized = true;
+      debugPrint('✅ Notification Service initialized');
     } catch (e) {
-      debugPrint('Notification initialization error: $e');
+      debugPrint('❌ Notification initialization error: $e');
     }
   }
 
   //-------------------------------------------------------
-  // ✅ ADDED: Register / refresh this device's FCM token
-  // Call this once after the user logs in (e.g. in your
-  // AuthProvider right after sign-in succeeds), so Cloud
-  // Functions know which device to push door/expiry alerts to.
+  // Register FCM Token
   //-------------------------------------------------------
 
   Future<void> registerFcmToken(String userId) async {
@@ -78,7 +79,7 @@ class NotificationService {
         await _db.collection('fcm_tokens').doc(userId).set({
           'token': token,
           'platform': defaultTargetPlatform.name,
-          'updatedAt': Timestamp.now(),
+          'updatedAt': FieldValue.serverTimestamp(),
         });
         debugPrint('✅ FCM token registered for $userId');
       }
@@ -92,7 +93,7 @@ class NotificationService {
         await _db.collection('fcm_tokens').doc(userId).set({
           'token': newToken,
           'platform': defaultTargetPlatform.name,
-          'updatedAt': Timestamp.now(),
+          'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
         debugPrint('✅ FCM token refreshed for $userId');
       } catch (e) {
@@ -101,41 +102,56 @@ class NotificationService {
     });
   }
 
-  // ✅ ADDED: Call on logout so a shared/borrowed device doesn't
-  // keep receiving another user's push notifications.
+  //-------------------------------------------------------
+  // Unregister FCM Token (on logout)
+  //-------------------------------------------------------
+
   Future<void> unregisterFcmToken(String userId) async {
     try {
       await _db.collection('fcm_tokens').doc(userId).delete();
+      debugPrint('✅ FCM token unregistered for $userId');
     } catch (e) {
-      debugPrint('Failed to unregister FCM token: $e');
+      debugPrint('❌ Failed to unregister FCM token: $e');
     }
   }
 
+  //-------------------------------------------------------
+  // Notification Tap Handler
+  //-------------------------------------------------------
+
   void _onNotificationTap(NotificationResponse response) {
     debugPrint('Notification tapped: ${response.payload}');
+    // TODO: Handle navigation based on payload
+    // Example: Navigate to item detail if payload contains itemId
   }
 
   //-------------------------------------------------------
-  // Request permissions
+  // Request Permissions
   //-------------------------------------------------------
 
   Future<void> requestPermissions() async {
     try {
+      // Android 13+ notification permission
       await Permission.notification.request();
+
+      // iOS permissions
       await _fcm.requestPermission(
         alert: true,
         badge: true,
         sound: true,
       );
     } catch (e) {
-      debugPrint('Permission request error: $e');
+      debugPrint('❌ Permission request error: $e');
     }
   }
+
+  //-------------------------------------------------------
+  // Show Local Notification (from FCM message)
+  //-------------------------------------------------------
 
   Future<void> showLocalNotification(RemoteMessage message) async {
     try {
       final notification = message.notification;
-
       if (notification == null) return;
 
       const AndroidNotificationDetails androidDetails =
@@ -159,17 +175,22 @@ class NotificationService {
         iOS: iosDetails,
       );
 
+      // ✅ FIX: Use named parameters for show
       await _localNotifications.show(
-        id: DateTime.now().millisecondsSinceEpoch,
-        title: notification.title,
-        body: notification.body,
+        id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+        title: notification.title ?? 'Smart Cabinet',
+        body: notification.body ?? '',
         notificationDetails: details,
         payload: message.data['itemId'],
       );
     } catch (e) {
-      debugPrint('Show local notification error: $e');
+      debugPrint('❌ Show local notification error: $e');
     }
   }
+
+  //-------------------------------------------------------
+  // Show General Notification
+  //-------------------------------------------------------
 
   Future<void> showNotification({
     required int id,
@@ -194,6 +215,7 @@ class NotificationService {
         iOS: iosDetails,
       );
 
+      // ✅ FIX: Use named parameters for show
       await _localNotifications.show(
         id: id,
         title: title,
@@ -202,12 +224,12 @@ class NotificationService {
         payload: payload,
       );
     } catch (e) {
-      debugPrint('Show notification error: $e');
+      debugPrint('❌ Show notification error: $e');
     }
   }
 
   //-------------------------------------------------------
-  // Schedule expiry notification
+  // Schedule Expiry Notification
   //-------------------------------------------------------
 
   Future<void> scheduleExpiryNotification({
@@ -237,6 +259,7 @@ class NotificationService {
         iOS: iosDetails,
       );
 
+      // ✅ FIX: Use named parameters for zonedSchedule
       await _localNotifications.zonedSchedule(
         id: id,
         title: title,
@@ -246,53 +269,94 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         payload: payload,
       );
+
+      debugPrint('✅ Scheduled expiry notification: $id');
     } catch (e) {
-      debugPrint('Schedule expiry notification error: $e');
+      debugPrint('❌ Schedule expiry notification error: $e');
     }
   }
 
+  //-------------------------------------------------------
+  // Cancel Notifications
+  //-------------------------------------------------------
+
   Future<void> cancelNotification(int id) async {
     try {
+      // ✅ FIX: Use named parameter for cancel
       await _localNotifications.cancel(id: id);
+      debugPrint('✅ Cancelled notification: $id');
     } catch (e) {
-      debugPrint('Cancel notification error: $e');
+      debugPrint('❌ Cancel notification error: $e');
     }
   }
 
   Future<void> cancelAllNotifications() async {
     try {
       await _localNotifications.cancelAll();
+      debugPrint('✅ Cancelled all notifications');
     } catch (e) {
-      debugPrint('Cancel all notifications error: $e');
+      debugPrint('❌ Cancel all notifications error: $e');
     }
   }
 
   //-------------------------------------------------------
-  // Get FCM token
+  // Get FCM Token
   //-------------------------------------------------------
 
   Future<String?> getToken() async {
     try {
       return await _fcm.getToken();
     } catch (e) {
-      debugPrint('Get FCM token error: $e');
+      debugPrint('❌ Get FCM token error: $e');
       return null;
     }
   }
 
+  //-------------------------------------------------------
+  // Topic Subscription
+  //-------------------------------------------------------
+
   Future<void> subscribeToTopic(String topic) async {
     try {
       await _fcm.subscribeToTopic(topic);
+      debugPrint('✅ Subscribed to topic: $topic');
     } catch (e) {
-      debugPrint('Subscribe to topic error: $e');
+      debugPrint('❌ Subscribe to topic error: $e');
     }
   }
 
   Future<void> unsubscribeFromTopic(String topic) async {
     try {
       await _fcm.unsubscribeFromTopic(topic);
+      debugPrint('✅ Unsubscribed from topic: $topic');
     } catch (e) {
-      debugPrint('Unsubscribe from topic error: $e');
+      debugPrint('❌ Unsubscribe from topic error: $e');
+    }
+  }
+
+  //-------------------------------------------------------
+  // Get Notification Permission Status
+  //-------------------------------------------------------
+
+  Future<bool> hasNotificationPermission() async {
+    try {
+      final status = await Permission.notification.status;
+      return status.isGranted;
+    } catch (e) {
+      debugPrint('❌ Permission status error: $e');
+      return false;
+    }
+  }
+
+  //-------------------------------------------------------
+  // Open App Settings
+  //-------------------------------------------------------
+
+  Future<void> openNotificationSettings() async {
+    try {
+      await openAppSettings();
+    } catch (e) {
+      debugPrint('❌ Open app settings error: $e');
     }
   }
 }

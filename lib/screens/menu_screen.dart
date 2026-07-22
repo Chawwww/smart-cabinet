@@ -21,6 +21,8 @@ import 'medicine_info_screen.dart';
 import 'language_selector_screen.dart';
 import 'shared_cabinets_screen.dart';
 import 'smart_cabinet_control_screen.dart';
+import 'tag_management_screen.dart';
+import 'notification_settings_screen.dart';
 
 class MenuScreen extends StatefulWidget {
   const MenuScreen({super.key});
@@ -111,63 +113,10 @@ class _MenuScreenState extends State<MenuScreen> {
 
   // ── Tags ──────────────────────────────────────────────
   void _manageTags(BuildContext context) {
-    final ip = context.read<ItemProvider>();
-    final s = S.of(context);
-    
-    final tags = ip.items
-        .expand((i) => i.tags)
-        .toSet()
-        .toList()
-      ..sort();
-    
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
-          children: [
-            const Icon(Icons.local_offer, color: Color(0xFF4ECDC4)),
-            const SizedBox(width: 8),
-            Text(s.manageTags),
-          ],
-        ),
-        content: tags.isEmpty
-            ? SizedBox(
-                width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.tag, size: 40, color: Colors.grey),
-                    const SizedBox(height: 8),
-                    Text(s.noData, style: const TextStyle(color: Colors.grey)),
-                  ],
-                ),
-              )
-            : SizedBox(
-                width: double.maxFinite,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: tags
-                      .map((t) => Chip(
-                            label: Text(t),
-                            backgroundColor: const Color(0xFF4ECDC4)
-                                .withValues(alpha: 0.15),
-                            labelStyle: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ))
-                      .toList(),
-                ),
-              ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(s.close),
-          ),
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const TagManagementScreen(),
       ),
     );
   }
@@ -279,9 +228,6 @@ class _MenuScreenState extends State<MenuScreen> {
     final subColor = textColor.withValues(alpha: 0.55);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    debugPrint('🔍 Menu Screen - isLoggedIn: ${authProvider.isLoggedIn}');
-    debugPrint('🔍 Menu Screen - user: ${user?.name}, ${user?.email}');
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
@@ -289,7 +235,7 @@ class _MenuScreenState extends State<MenuScreen> {
           padding: const EdgeInsets.all(16),
           children: [
 
-            // ── Profile card ────────────────────────────────
+            // ── Profile card with Avatar ─────────────────────
             Card(
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -300,30 +246,67 @@ class _MenuScreenState extends State<MenuScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
+                    // ✅ FIXED: Avatar with profile image
                     Container(
                       width: 60,
                       height: 60,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
                           colors: [Color(0xFF4ECDC4), Color(0xFF45B7D1)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(30),
                       ),
-                      child: Center(
-                        child: Text(
-                          user != null && user.name.isNotEmpty
-                              ? user.name[0].toUpperCase()
-                              : authProvider.isLoggedIn 
-                                  ? 'U'
-                                  : 'G',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      child: ClipOval(
+                        child: (user?.avatar != null && user!.avatar!.isNotEmpty)
+                            ? Image.network(
+                                user.avatar!,
+                                width: 60,
+                                height: 60,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Center(
+                                  child: Text(
+                                    user.name.isNotEmpty 
+                                        ? user.name[0].toUpperCase() 
+                                        : (authProvider.isLoggedIn ? 'U' : 'G'),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                loadingBuilder: (_, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Center(
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        value: loadingProgress.expectedTotalBytes != null
+                                            ? loadingProgress.cumulativeBytesLoaded /
+                                                loadingProgress.expectedTotalBytes!
+                                            : null,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              )
+                            : Center(
+                                child: Text(
+                                  user != null && user.name.isNotEmpty
+                                      ? user.name[0].toUpperCase()
+                                      : authProvider.isLoggedIn ? 'U' : 'G',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -447,19 +430,6 @@ class _MenuScreenState extends State<MenuScreen> {
               ),
             ),
 
-            _menuItem(
-              context,
-              icon: Icons.inventory_2_outlined,
-              title: s.manageCategories,
-              subtitle: 'Manage your categories',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const CategoryScreen(),
-                ),
-              ),
-            ),
-
             const Divider(),
             const SizedBox(height: 8),
 
@@ -527,7 +497,7 @@ class _MenuScreenState extends State<MenuScreen> {
             _menuItem(
               context,
               icon: Icons.local_offer_outlined,
-              title: s.manageTags,
+              title: 'Manage Tags',
               onTap: () => _manageTags(context),
             ),
 
@@ -606,6 +576,19 @@ class _MenuScreenState extends State<MenuScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => const LanguageSelectorScreen(),
+                ),
+              ),
+            ),
+
+            _menuItem(
+              context,
+              icon: Icons.notifications_outlined,
+              title: 'Notification Settings',
+              subtitle: 'Configure expiry reminders and alerts',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const NotificationSettingsScreen(),
                 ),
               ),
             ),
