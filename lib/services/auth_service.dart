@@ -42,14 +42,7 @@ class AuthService {
     }
   }
 
-  // ── Upload Profile Image (FIXED) ────────────────────────
-  // - Adds a hard timeout so a dropped connection fails fast
-  //   instead of hanging until Firebase cancels it silently
-  //   (StorageException Code -13040, HttpResult: 0).
-  // - Surfaces the real FirebaseException code/message instead
-  //   of burying it in a generic wrapper.
-  // - Explicitly cancels the upload task on timeout so it
-  //   doesn't keep retrying in the background.
+  // ── Upload Profile Image ────────────────────────────────
   Future<String?> uploadProfileImage(File image, String userId) async {
     late final UploadTask uploadTask;
     try {
@@ -59,7 +52,6 @@ class AuthService {
 
       uploadTask = ref.putFile(image);
 
-      // Log progress/state — helpful for diagnosing dropped connections.
       uploadTask.snapshotEvents.listen((event) {
         debugPrint(
           '📤 Upload state: ${event.state}, '
@@ -143,15 +135,26 @@ class AuthService {
   }
 
   // ── Google Sign-In ────────────────────────────────────
-  // NOTE: If this throws ApiException/DEVELOPER_ERROR (statusCode
-  // DEVELOPER_ERROR), the code itself is fine — it means the SHA-1/
-  // SHA-256 fingerprint of your signing key isn't registered in the
-  // Firebase console for this app, or google-services.json is stale.
-  // Run `cd android && ./gradlew signingReport`, add the debug
-  // fingerprints under Firebase Console → Project Settings → your
-  // Android app, then re-download google-services.json.
+  // ✅ FIXED: GoogleSignIn caches the last-used account natively on
+  // the device. Calling `_googleSignIn.signIn()` directly returns
+  // that cached account silently — the account picker never shows,
+  // so the user is stuck on whichever Google account signed in
+  // first and can never switch. Signing out of the native Google
+  // session immediately beforehand forces the picker to appear
+  // every time this is called.
+  //
+  // NOTE (unrelated, kept from original): if this throws
+  // ApiException/DEVELOPER_ERROR, it's a SHA-1/SHA-256 fingerprint
+  // mismatch in the Firebase console, not a code bug — run
+  // `cd android && ./gradlew signingReport`, add the fingerprints
+  // under Firebase Console → Project Settings → your Android app,
+  // then re-download google-services.json.
   Future<UserCredential?> signInWithGoogle() async {
     try {
+      // Clear the cached native session so the picker always shows,
+      // letting the user pick a different account.
+      await _googleSignIn.signOut();
+
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) return null;
 
@@ -218,16 +221,57 @@ class AuthService {
         verificationId: verificationId,
         smsCode: smsCode,
       );
-      return await _auth.signInWithCredential(credential);
+      final userCredential = await _auth.signInWithCredential(credential);
+
+      final user = userCredential.user;
+      if (user != null) {
+        final existing = await getUserData(user.uid);
+        if (existing == null) {
+          await _createUserDocument(
+            uid: user.uid,
+            email: user.email ?? '${user.uid}@phone.local',
+            name: user.displayName ?? 'User',
+          );
+        }
+      }
+
+      return userCredential;
     } catch (e) {
       throw Exception(_handleAuthError(e));
     }
   }
 
-  // ── Anonymous Login ───────────────────────────────────
+  // ── Anonymous / Guest Login ───────────────────────────
+  // ✅ FIXED: this previously only called `_auth.signInAnonymously()`
+  // and returned — it never created a Firestore `users/{uid}` doc.
+  // AuthProvider always calls `getUserData(uid)` right after sign-in
+  // and treats a missing doc as AuthStatus.error, so guest sign-in
+  // appeared to "fail" even though Firebase Auth succeeded.
+  //
+  // On top of that, your Firestore rule requires BOTH
+  // hasString('name') AND hasString('email') to create a `users`
+  // doc — an anonymous FirebaseAuth user has no email, so even a
+  // naive fix (just calling _createUserDocument with email: '')
+  // would still be rejected by the rule. Guests get a placeholder
+  // email so the rule's hasString('email') check passes.
   Future<UserCredential> signInAnonymously() async {
     try {
-      return await _auth.signInAnonymously();
+      final credential = await _auth.signInAnonymously();
+      final user = credential.user;
+
+      if (user != null) {
+        final existing = await getUserData(user.uid);
+        if (existing == null) {
+          await _createUserDocument(
+            uid: user.uid,
+            email: '${user.uid}@guest.local',
+            name: 'Guest',
+            isAnonymous: true,
+          );
+        }
+      }
+
+      return credential;
     } catch (e) {
       throw Exception(_handleAuthError(e));
     }
@@ -328,6 +372,7 @@ class AuthService {
     required String email,
     required String name,
     String? avatar,
+    bool isAnonymous = false,
   }) async {
     final userData = {
       'uid': uid,
@@ -335,6 +380,7 @@ class AuthService {
       'name': name,
       'avatar': avatar,
       'emailVerified': false,
+      'isAnonymous': isAnonymous,
       'settings': {
         'darkMode': false,
         'notificationsEnabled': true,

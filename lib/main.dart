@@ -5,6 +5,10 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+// ✅ NEW — aliased to avoid colliding with your own providers/auth_provider.dart's
+// AuthProvider class (firebase_auth exports its own unrelated AuthProvider,
+// used for multi-factor auth providers).
+import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 
 import 'firebase_options.dart';
 import 'config/app_constants.dart';
@@ -20,7 +24,9 @@ import 'providers/notification_provider.dart';
 import 'providers/dashboard_provider.dart';
 import 'providers/search_provider.dart';
 import 'services/notification_service.dart';
+import 'services/door_notification_bridge.dart';
 import 'services/ai_service.dart';
+import 'services/iot_service.dart';
 import 'themes/app_theme.dart';
 
 import 'models/item_model.dart';
@@ -71,6 +77,15 @@ void main() async {
   await NotificationService().initialize();
   AIService().initialize();
 
+  // ─────────────────────────────────────────────────────────
+  // Bridge BLE door-sensor events to system notifications
+  // ─────────────────────────────────────────────────────────
+  fb_auth.FirebaseAuth.instance.authStateChanges().listen((user) {
+    if (user != null) {
+      DoorNotificationBridge().start();
+    }
+  });
+
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   runApp(SmartCabinetApp(prefs: prefs));
@@ -94,6 +109,11 @@ class SmartCabinetApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => DashboardProvider()),
         ChangeNotifierProvider(create: (_) => SearchProvider()),
+        // 👇 Use Provider instead of ChangeNotifierProvider since IoTService doesn't extend ChangeNotifier
+        Provider<IoTService>(
+          create: (_) => IoTService(),
+          lazy: false,
+        ),
       ],
       child: Consumer2<ThemeProvider, LanguageProvider>(
         builder: (context, themeProvider, languageProvider, _) {

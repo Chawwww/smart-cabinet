@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>需要蓝牙持续连接柜子以接收开门提醒并控制上锁/解锁</string>
+
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>需要蓝牙连接柜子设备</string>
+
+	<key>UIBackgroundModes</key>
+	<array>
+	<string>bluetooth-central</string>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
