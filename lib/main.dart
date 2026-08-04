@@ -49,6 +49,7 @@ import 'screens/item_detail_screen.dart';
 import 'screens/cabinet_detail_screen.dart';
 import 'screens/share_cabinet_screen.dart';
 import 'screens/shared_cabinets_screen.dart';
+import 'screens/manage_cabinets_screen.dart'; // ✅ ADDED
 import 'screens/ai_chat_screen.dart';
 import 'screens/help_support_screen.dart';
 import 'screens/custom_fields_screen.dart';
@@ -159,6 +160,7 @@ class SmartCabinetApp extends StatelessWidget {
               '/add-category': (context) => const AddEditCategoryScreen(),
               '/add-cabinet': (context) => const AddEditCabinetScreen(),
               '/manage-tags': (context) => TagManagementScreen(),
+              '/manage-cabinets': (context) => const ManageCabinetsScreen(), // ✅ ADDED
               '/item-detail': (context) {
                 final args = ModalRoute.of(context)?.settings.arguments;
                 if (args is ItemModel) {

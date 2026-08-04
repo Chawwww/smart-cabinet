@@ -128,6 +128,24 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
     }
   }
 
+  Future<void> _updatePermission(String userId, String userName, String newPermission) async {
+    final success = await context.read<CabinetProvider>().updatePermission(
+      cabinetId: widget.cabinetId,
+      userId: userId,
+      newPermission: newPermission,
+    );
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Updated $userName\'s permission to ${_getPermissionLabel(newPermission)}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _loadSharedUsers();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
@@ -135,6 +153,7 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
     
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = textColor.withValues(alpha: 0.55);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // If not owner, show read-only view
     if (!isOwner) {
@@ -219,6 +238,13 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Share Cabinet'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadSharedUsers,
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -273,6 +299,7 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
                 Expanded(
                   child: TextField(
                     controller: _emailController,
+                    enabled: !_isLoading,
                     decoration: const InputDecoration(
                       hintText: 'Enter user email',
                       border: OutlineInputBorder(),
@@ -281,14 +308,22 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: _selectedPermission,
-                  items: const [
-                    DropdownMenuItem(value: 'view', child: Text('👁️ View')),
-                    DropdownMenuItem(value: 'edit', child: Text('✏️ Edit')),
-                    DropdownMenuItem(value: 'admin', child: Text('👑 Admin')),
-                  ],
-                  onChanged: (v) => setState(() => _selectedPermission = v!),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _selectedPermission,
+                    items: const [
+                      DropdownMenuItem(value: 'view', child: Text('👁️ View')),
+                      DropdownMenuItem(value: 'edit', child: Text('✏️ Edit')),
+                      DropdownMenuItem(value: 'admin', child: Text('👑 Admin')),
+                    ],
+                    onChanged: (v) => setState(() => _selectedPermission = v!),
+                    underline: const SizedBox.shrink(),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                 ),
               ],
             ),
@@ -343,31 +378,60 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _getPermissionColor(user['permission']),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        _getPermissionLabel(user['permission']),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                    if (!(user['isOwner'] ?? false)) ...[
+                      // Permission dropdown for shared users
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: DropdownButton<String>(
+                          value: user['permission'] ?? 'view',
+                          items: const [
+                            DropdownMenuItem(value: 'view', child: Text('👁️')),
+                            DropdownMenuItem(value: 'edit', child: Text('✏️')),
+                            DropdownMenuItem(value: 'admin', child: Text('👑')),
+                          ],
+                          onChanged: (newPerm) {
+                            if (newPerm != null) {
+                              _updatePermission(
+                                user['id'],
+                                user['name'] ?? 'Unknown',
+                                newPerm,
+                              );
+                            }
+                          },
+                          underline: const SizedBox.shrink(),
+                          icon: const Icon(Icons.arrow_drop_down, size: 18),
                         ),
                       ),
-                    ),
-                    if (!(user['isOwner'] ?? false))
+                      const SizedBox(width: 4),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.red, size: 18),
                         onPressed: () => _revokeAccess(
                           user['id'],
                           user['name'] ?? 'Unknown',
                         ),
+                        tooltip: 'Revoke access',
                       ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4ECDC4),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Owner',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -391,7 +455,7 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
 
   String _getPermissionLabel(String? permission) {
     switch (permission) {
-      case 'view': return 'View';
+      case 'view': return 'View Only';
       case 'edit': return 'Edit';
       case 'admin': return 'Admin';
       default: return 'View';

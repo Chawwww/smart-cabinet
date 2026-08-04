@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../providers/auth_provider.dart';
+import 'cabinet_detail_screen.dart';
 
 class SharedCabinetsScreen extends StatelessWidget {
   const SharedCabinetsScreen({super.key});
@@ -17,6 +18,20 @@ class SharedCabinetsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Shared Cabinets'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              cabinetProvider.reloadCabinets();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Refreshing...'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: sharedCabinets.isEmpty
           ? const Center(
@@ -47,9 +62,25 @@ class SharedCabinetsScreen extends StatelessWidget {
                 
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: ListTile(
-                    leading: Text(cabinet.icon ?? '🗄️', 
-                        style: const TextStyle(fontSize: 30)),
+                    leading: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4ECDC4).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Center(
+                        child: Text(
+                          cabinet.icon ?? '🗄️', 
+                          style: const TextStyle(fontSize: 28),
+                        ),
+                      ),
+                    ),
                     title: Text(
                       cabinet.name,
                       style: TextStyle(
@@ -79,11 +110,12 @@ class SharedCabinetsScreen extends StatelessWidget {
                       ),
                     ),
                     onTap: () {
-                      // Navigate to cabinet detail
-                      // You can add cabinet detail screen navigation here
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Opening ${cabinet.name}...'),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CabinetDetailScreen(
+                            cabinetId: cabinet.id!,
+                          ),
                         ),
                       );
                     },

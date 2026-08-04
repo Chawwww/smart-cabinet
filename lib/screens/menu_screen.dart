@@ -20,6 +20,7 @@ import 'help_support_screen.dart';
 import 'medicine_info_screen.dart';
 import 'language_selector_screen.dart';
 import 'shared_cabinets_screen.dart';
+import 'manage_cabinets_screen.dart'; // ✅ ADDED
 import 'smart_cabinet_control_screen.dart';
 import 'tag_management_screen.dart';
 import 'notification_settings_screen.dart';
@@ -408,6 +409,23 @@ class _MenuScreenState extends State<MenuScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => const CategoryScreen(),
+                ),
+              ),
+            ),
+
+            // ✅ ADDED: Manage Cabinets
+            _menuItem(
+              context,
+              icon: Icons.cabin_outlined,
+              title: 'Manage Cabinets',
+              subtitle: '${cabinetProvider.ownedCabinets.length} owned • ${cabinetProvider.sharedCabinets.length} shared',
+              badge: cabinetProvider.ownedCabinets.isNotEmpty 
+                  ? '${cabinetProvider.ownedCabinets.length}' 
+                  : null,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ManageCabinetsScreen(),
                 ),
               ),
             ),
