@@ -1,4 +1,6 @@
 // lib/services/firestore_service.dart
+import 'dart:async';
+import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cabinet_model.dart';
@@ -67,7 +69,85 @@ class FirestoreService {
 
   // ── CABINETS ──────────────────────────────────────────
 
+  // ✅ FIXED - Returns both owned AND shared cabinets
   Stream<List<CabinetModel>> getCabinets() {
+    if (_userId.isEmpty) {
+      return Stream.value([]);
+    }
+
+    // Use a broadcast stream controller to combine results
+    final controller = StreamController<List<CabinetModel>>.broadcast();
+
+    // Track loaded state
+    bool ownedLoaded = false;
+    bool sharedLoaded = false;
+    List<CabinetModel> ownedCabinets = [];
+    List<CabinetModel> sharedCabinets = [];
+
+    void checkAndEmit() {
+      if (ownedLoaded && sharedLoaded) {
+        // Combine and remove duplicates
+        final allCabinets = [...ownedCabinets, ...sharedCabinets];
+        final uniqueCabinets = <String, CabinetModel>{};
+        for (final cabinet in allCabinets) {
+          if (cabinet.id != null) {
+            uniqueCabinets[cabinet.id!] = cabinet;
+          }
+        }
+
+        final result = uniqueCabinets.values.toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
+
+        log('🗄️ Cabinets loaded: ${result.length} (${ownedCabinets.length} owned, ${sharedCabinets.length} shared)');
+        controller.add(result);
+      }
+    }
+
+    // Listen to owned cabinets
+    _firestore
+        .collection(AppConstants.cabinetsCollection)
+        .where('userId', isEqualTo: _userId)
+        .orderBy('name')
+        .snapshots()
+        .listen(
+          (snapshot) {
+            ownedCabinets = snapshot.docs
+                .map((doc) => CabinetModel.fromFirestore(doc))
+                .toList();
+            ownedLoaded = true;
+            checkAndEmit();
+          },
+          onError: (error) {
+            ownedLoaded = true;
+            checkAndEmit();
+          },
+        );
+
+    // Listen to shared cabinets
+    _firestore
+        .collection(AppConstants.cabinetsCollection)
+        .where('sharedWith', arrayContains: _userId)
+        .orderBy('name')
+        .snapshots()
+        .listen(
+          (snapshot) {
+            sharedCabinets = snapshot.docs
+                .map((doc) => CabinetModel.fromFirestore(doc))
+                .toList();
+            sharedLoaded = true;
+            checkAndEmit();
+          },
+          onError: (error) {
+            sharedLoaded = true;
+            checkAndEmit();
+          },
+        );
+
+    return controller.stream;
+  }
+
+  // Legacy method - kept for compatibility
+  Stream<List<CabinetModel>> getOwnedCabinets() {
     if (_userId.isEmpty) {
       return Stream.value([]);
     }
@@ -163,7 +243,61 @@ class FirestoreService {
 
   // ── BOXES ─────────────────────────────────────────────
 
+  // ✅ FIXED - Returns boxes for owned AND shared cabinets
   Stream<List<BoxModel>> getBoxes() {
+    if (_userId.isEmpty) {
+      return Stream.value([]);
+    }
+
+    final controller = StreamController<List<BoxModel>>.broadcast();
+
+    // First get all cabinet IDs the user has access to
+    _firestore
+        .collection(AppConstants.cabinetsCollection)
+        .where(Filter.or(
+          Filter('userId', isEqualTo: _userId),
+          Filter('sharedWith', arrayContains: _userId),
+        ))
+        .snapshots()
+        .listen(
+          (cabinetSnapshot) async {
+            final cabinetIds = cabinetSnapshot.docs.map((doc) => doc.id).toList();
+
+            if (cabinetIds.isEmpty) {
+              controller.add([]);
+              return;
+            }
+
+            // Query boxes for all accessible cabinets
+            try {
+              final boxSnapshot = await _firestore
+                  .collection(AppConstants.boxesCollection)
+                  .where('cabinetId', whereIn: cabinetIds)
+                  .orderBy('name')
+                  .get();
+
+              final boxes = boxSnapshot.docs
+                  .map((doc) => BoxModel.fromFirestore(doc))
+                  .toList();
+
+              log('📦 Boxes loaded: ${boxes.length}');
+              controller.add(boxes);
+            } catch (e) {
+              log('Error loading boxes: $e');
+              controller.add([]);
+            }
+          },
+          onError: (error) {
+            log('Error loading cabinets for boxes: $error');
+            controller.add([]);
+          },
+        );
+
+    return controller.stream;
+  }
+
+  // Legacy method - kept for compatibility
+  Stream<List<BoxModel>> getOwnedBoxes() {
     if (_userId.isEmpty) {
       return Stream.value([]);
     }
@@ -242,13 +376,17 @@ class FirestoreService {
         });
   }
 
-  Future<void> addItem(ItemModel item) async {
+  // ✅ CHANGED — now returns the new document's id so callers (e.g.
+  // ItemProvider's optimistic-add flow) can reconcile a local placeholder
+  // with the real Firestore document once the write completes.
+  Future<String> addItem(ItemModel item) async {
     final doc = _firestore
         .collection(AppConstants.itemsCollection)
         .doc();
 
     final data = item.copyWith(id: doc.id).toFirestore();
     await doc.set(data);
+    return doc.id;
   }
 
   Future<void> updateItem(ItemModel item) async {

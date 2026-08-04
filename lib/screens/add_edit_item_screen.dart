@@ -1,16 +1,21 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../models/item_model.dart';
+import '../models/cabinet_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/item_provider.dart';
 import '../services/ai_service.dart';
-import '../widgets/voice_text_field.dart'; // ✅ ADDED for voice input
+import '../services/iot_service.dart';
+import '../services/location_memory_service.dart';
+import '../widgets/voice_text_field.dart';
 
 class AddEditItemScreen extends StatefulWidget {
   final ItemModel? item;
@@ -40,15 +45,17 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
   DateTime? _expiryDate;
   DateTime? _productionDate;
 
-  // ── Multi-photo support ────────────────────────────────
-  // Photos already saved to Firebase Storage (kept across edits)
   final List<String> _existingImageUrls = [];
-  // Newly picked photos not yet uploaded
   final List<File> _newImages = [];
 
   bool _isAiLoading  = false;
   bool _isSaving     = false;
   bool _isImgLoading = false;
+
+  bool _bleConnected = false;
+  bool _autoMatchedDevice = false;
+  bool _isLoadingLocation = true;
+  StreamSubscription<String>? _connectionSub;
 
   bool get _isEditing => widget.item != null;
 
@@ -75,17 +82,116 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       _expiryDate     = i.expiryDate;
       _productionDate = i.productionDate;
       _existingImageUrls.addAll(i.imageUrls);
+      _isLoadingLocation = false;
     } else {
       _qtyCtrl.text      = '1';
       _lowStockCtrl.text = '5';
+
+      // Load location on init
+      _loadInitialLocation();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CategoryProvider>().loadCategories();
-      context.read<CabinetProvider>()
-        ..loadCabinets()
-        ..loadBoxes();
-      AIService().initialize();
+
+    // Listen to BLE connection status
+    _bleConnected = IoTService().isConnected;
+    _connectionSub = IoTService().connectionStatus.listen((status) {
+      if (!mounted) return;
+      final wasConnected = _bleConnected;
+      setState(() => _bleConnected = status == 'Connected');
+
+      // If we just connected, reload location to auto-select cabinet
+      if (!wasConnected && _bleConnected) {
+        _loadInitialLocation();
+      }
     });
+  }
+
+  // ── Load initial location (OPTIMIZED) ─────────────────
+  Future<void> _loadInitialLocation() async {
+    setState(() => _isLoadingLocation = true);
+
+    try {
+      // Load categories (keep original)
+      context.read<CategoryProvider>().loadCategories();
+
+      final cabProvider = context.read<CabinetProvider>();
+
+      // ✅ OPTIMIZED: Check if data already loaded - use it immediately
+      bool hasData = cabProvider.cabinets.isNotEmpty && cabProvider.boxes.isNotEmpty;
+
+      if (!hasData) {
+        // Only force load if truly needed (maintains original logic)
+        await Future.wait([
+          cabProvider.forceLoadCabinets(),
+          cabProvider.forceLoadBoxes(),
+        ]);
+      }
+
+      if (!mounted) return;
+
+      debugPrint('📊 Cabinets loaded: ${cabProvider.cabinets.length}');
+      debugPrint('📊 Boxes loaded: ${cabProvider.boxes.length}');
+
+      // If still empty, try one more time (maintains original retry logic)
+      if (cabProvider.cabinets.isEmpty) {
+        debugPrint('⚠️ Cabinets still empty, waiting a moment...');
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        await cabProvider.forceLoadCabinets();
+        await cabProvider.forceLoadBoxes();
+
+        if (!mounted) return;
+        debugPrint('📊 After retry - Cabinets: ${cabProvider.cabinets.length}');
+      }
+
+      // Try to match by BLE device first (keeps original logic)
+      final connectedDeviceId = IoTService().connectedDeviceId;
+      CabinetModel? matched;
+      if (connectedDeviceId != null && cabProvider.cabinets.isNotEmpty) {
+        try {
+          matched = cabProvider.cabinets
+              .firstWhere((c) => c.bleDeviceId == connectedDeviceId);
+          debugPrint('🔵 Matched cabinet by BLE device: ${matched?.name}');
+        } catch (_) {
+          matched = null;
+        }
+      }
+
+      if (matched != null && mounted) {
+        setState(() {
+          _cabinetId = matched!.id;
+          _autoMatchedDevice = true;
+        });
+      } else {
+        // Fallback: last-used location (keeps original logic)
+        final rememberedCabinetId = await LocationMemoryService().getLastCabinetId();
+        final rememberedBoxId = await LocationMemoryService().getLastBoxId();
+
+        debugPrint('📍 Remembered cabinet: $rememberedCabinetId');
+        debugPrint('📍 Remembered box: $rememberedBoxId');
+
+        final cabinetStillExists = rememberedCabinetId != null &&
+            cabProvider.cabinets.any((c) => c.id == rememberedCabinetId);
+
+        if (cabinetStillExists && mounted) {
+          final boxStillExists = rememberedBoxId != null &&
+              cabProvider
+                  .getBoxesForCabinet(rememberedCabinetId)
+                  .any((b) => b.id == rememberedBoxId);
+
+          setState(() {
+            _cabinetId = rememberedCabinetId;
+            _boxId = boxStillExists ? rememberedBoxId : null;
+          });
+          debugPrint('✅ Restored remembered location');
+        } else {
+          debugPrint('ℹ️ No remembered location found or cabinet no longer exists');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading location: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingLocation = false);
+    }
   }
 
   @override
@@ -93,6 +199,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     _nameCtrl.dispose(); _descCtrl.dispose(); _brandCtrl.dispose();
     _qtyCtrl.dispose(); _lowStockCtrl.dispose();
     _noteCtrl.dispose(); _tagsCtrl.dispose();
+    _connectionSub?.cancel();
     super.dispose();
   }
 
@@ -149,7 +256,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     if (source == null) return;
 
     if (source == ImageSource.gallery) {
-      // Gallery supports picking several photos at once
       final picked = await ImagePicker()
           .pickMultiImage(imageQuality: 85, maxWidth: 1080);
       if (picked.isEmpty) return;
@@ -198,7 +304,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
         ),
       );
 
-  // ── Offer AI scan after picking a photo ───────────────
   void _offerAiScan(File image) {
     showDialog(
       context: context,
@@ -254,7 +359,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     );
   }
 
-  // ── AI Auto-fill from image ────────────────────────────
   Future<void> _autoFillFromImage(File image) async {
     setState(() => _isImgLoading = true);
     try {
@@ -272,7 +376,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     }
   }
 
-  // ── AI Auto-fill from name ─────────────────────────────
   Future<void> _autoFillFromName() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) { _showSnack('Enter an item name first'); return; }
@@ -292,7 +395,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     }
   }
 
-  // ── Auto-fill result sheet ─────────────────────────────
   void _showAutoFillSheet(ItemAutoFill fill) {
     final catProvider = context.read<CategoryProvider>();
     final matchedCat  = catProvider.getCategoryByName(fill.category);
@@ -499,25 +601,46 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     _showSnack('✅ AI fields applied! Review and save.');
   }
 
-  // ── Upload all photos (existing kept + newly picked) ──
+  // ── ✅ FIXED: Upload images with better error handling ──
   Future<List<String>> _uploadAllImages(String userId) async {
     final urls = <String>[..._existingImageUrls];
+    
     for (final file in _newImages) {
       try {
-        final ref = FirebaseStorage.instance.ref().child(
-            'item_photos/$userId/'
-            '${DateTime.now().millisecondsSinceEpoch}_${urls.length}.jpg');
-        await ref.putFile(file);
+        // Generate a unique filename
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        final fileName = 'item_photos/$userId/${timestamp}_${urls.length}.jpg';
+        
+        final ref = FirebaseStorage.instance.ref().child(fileName);
+        
+        // Upload with metadata
+        final metadata = SettableMetadata(
+          contentType: 'image/jpeg',
+          customMetadata: {
+            'uploadedBy': userId,
+            'uploadedAt': DateTime.now().toIso8601String(),
+          },
+        );
+        
+        // ✅ FIXED: Use putFile with metadata and better error handling
+        await ref.putFile(file, metadata);
+        
+        // Get download URL
         final url = await ref.getDownloadURL();
         urls.add(url);
-      } catch (_) {
-        // Skip photos that fail to upload rather than blocking the save.
+        
+        debugPrint('✅ Uploaded image: $fileName');
+      } catch (e) {
+        // Log error but continue with other images
+        debugPrint('❌ Failed to upload image: $e');
+        // Don't rethrow - continue with other images
       }
     }
+    
     return urls;
   }
 
-  // ── Save ──────────────────────────────────────────────
+  // ── SAVE METHOD (FIXED) ──
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_categoryId == null) {
@@ -525,7 +648,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       return;
     }
 
-    // SUPERVISOR REQ 3: Block adding item with expired expiry date
     if (_expiryDate != null) {
       final today = DateTime(
           DateTime.now().year,
@@ -538,13 +660,19 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     }
 
     setState(() => _isSaving = true);
+    
     try {
       final authProvider = context.read<AuthProvider>();
       final itemProvider = context.read<ItemProvider>();
-      final userId       = authProvider.currentUser?.id ?? '';
-      final now          = DateTime.now();
-
-      final imageUrls = await _uploadAllImages(userId);
+      final userId = authProvider.currentUser?.id ?? '';
+      
+      if (userId.isEmpty) {
+        _showSnack('User not authenticated');
+        setState(() => _isSaving = false);
+        return;
+      }
+      
+      final now = DateTime.now();
 
       final tags = _tagsCtrl.text
           .split(',')
@@ -552,48 +680,120 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
           .where((t) => t.isNotEmpty)
           .toList();
 
-      final item = ItemModel(
-        id:               widget.item?.id,
-        name:             _nameCtrl.text.trim(),
-        description:      _descCtrl.text.trim().isEmpty
-            ? null : _descCtrl.text.trim(),
-        categoryId:       _categoryId!,
-        cabinetId:        _cabinetId,
-        boxId:            _boxId,
-        brand:            _brandCtrl.text.trim().isEmpty
-            ? null : _brandCtrl.text.trim(),
-        quantity:         int.tryParse(_qtyCtrl.text) ?? 1,
-        initialQuantity:  _isEditing
-            ? widget.item!.initialQuantity
+      // Build the base item
+      final baseItem = ItemModel(
+        id: widget.item?.id,
+        name: _nameCtrl.text.trim(),
+        description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        categoryId: _categoryId!,
+        cabinetId: _cabinetId,
+        boxId: _boxId,
+        brand: _brandCtrl.text.trim().isEmpty ? null : _brandCtrl.text.trim(),
+        quantity: int.tryParse(_qtyCtrl.text) ?? 1,
+        initialQuantity: _isEditing 
+            ? widget.item!.initialQuantity 
             : (int.tryParse(_qtyCtrl.text) ?? 1),
-        unit:             _unit,
+        unit: _unit,
         lowStockThreshold: int.tryParse(_lowStockCtrl.text) ?? 5,
         withdrawalHistory: widget.item?.withdrawalHistory ?? [],
-        expiryDate:       _expiryDate,
-        productionDate:   _productionDate,
-        status:           _status,
-        note:             _noteCtrl.text.trim().isEmpty
-            ? null : _noteCtrl.text.trim(),
-        tags:             tags,
-        imageUrls:        imageUrls,
-        isFavorite:       widget.item?.isFavorite ?? false,
-        takenCount:       widget.item?.takenCount ?? 0,
-        createdAt:        widget.item?.createdAt ?? now,
-        updatedAt:        now,
-        userId:           userId,
+        expiryDate: _expiryDate,
+        productionDate: _productionDate,
+        status: _status,
+        note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+        tags: tags,
+        imageUrls: List<String>.from(_existingImageUrls),
+        isFavorite: widget.item?.isFavorite ?? false,
+        takenCount: widget.item?.takenCount ?? 0,
+        createdAt: widget.item?.createdAt ?? now,
+        updatedAt: now,
+        userId: userId,
       );
 
-      final ok = _isEditing
-          ? await itemProvider.updateItem(item)
-          : await itemProvider.addItem(item);
-
-      if (ok && mounted) {
-        Navigator.pop(context, true);
-      } else if (mounted) {
-        _showSnack('Error: ${itemProvider.error ?? 'Unknown error'}');
+      if (widget.item == null) {
+        // ── ADD NEW ITEM ──
+        
+        // Upload images first (if any)
+        List<String> imageUrls = List.from(_existingImageUrls);
+        
+        if (_newImages.isNotEmpty) {
+          try {
+            final uploadedUrls = await _uploadAllImages(userId);
+            imageUrls = uploadedUrls;
+          } catch (e) {
+            debugPrint('⚠️ Photo upload error: $e');
+            // Continue with existing images - don't fail the whole save
+            _showSnack('⚠️ Some photos failed to upload');
+          }
+        }
+        
+        // Create the final item with images
+        final newItem = baseItem.copyWith(imageUrls: imageUrls);
+        
+        // ✅ Use the optimistic add first for immediate UI feedback
+        itemProvider.addItemLocally(newItem);
+        
+        // Then save to Firestore in background
+        final docId = await itemProvider.addItem(newItem);
+        
+        if (docId == null) {
+          // Failed to save - remove the optimistic item
+          itemProvider.removeItemLocally(newItem.id!);
+          _showSnack('Error saving item');
+          setState(() => _isSaving = false);
+          return;
+        }
+        
+        // Remember location
+        await LocationMemoryService().saveLocation(
+          cabinetId: _cabinetId,
+          boxId: _boxId,
+        );
+        
+        if (mounted) {
+          Navigator.pop(context, true);
+          _showSnack('✅ Item added successfully');
+        }
+      } else {
+        // ── EDIT EXISTING ITEM ──
+        
+        // Upload new images if any
+        List<String> imageUrls = List.from(_existingImageUrls);
+        
+        if (_newImages.isNotEmpty) {
+          try {
+            final uploadedUrls = await _uploadAllImages(userId);
+            imageUrls = uploadedUrls;
+          } catch (e) {
+            debugPrint('⚠️ Photo upload error: $e');
+            // Continue with existing images
+            _showSnack('⚠️ Some photos failed to upload');
+          }
+        }
+        
+        final item = baseItem.copyWith(imageUrls: imageUrls);
+        
+        final ok = await itemProvider.updateItem(item);
+        
+        if (ok && mounted) {
+          await LocationMemoryService().saveLocation(
+            cabinetId: _cabinetId,
+            boxId: _boxId,
+          );
+          Navigator.pop(context, true);
+          _showSnack('✅ Item updated successfully');
+        } else if (mounted) {
+          _showSnack('Error: ${itemProvider.error ?? 'Unknown error'}');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Save error: $e');
+      if (mounted) {
+        _showSnack('Error: $e');
       }
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -625,14 +825,12 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     );
   }
 
-  // ── Date pickers ──────────────────────────────────────
-  // SUPERVISOR REQ 3: firstDate = today so past dates cannot be selected
   Future<void> _pickExpiry() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _expiryDate ??
           DateTime.now().add(const Duration(days: 30)),
-      firstDate: DateTime.now(), // cannot pick past dates
+      firstDate: DateTime.now(),
       lastDate: DateTime(2100),
     );
     if (picked != null) setState(() => _expiryDate = picked);
@@ -652,7 +850,6 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(msg)));
 
-  // ── Photo thumbnail with remove button ────────────────
   Widget _photoThumb({required Widget child, required VoidCallback onRemove}) {
     return Container(
       width: 100,
@@ -682,7 +879,16 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     );
   }
 
-  // ── Build ─────────────────────────────────────────────
+  Future<void> _clearRememberedLocation() async {
+    await LocationMemoryService().clear();
+    setState(() {
+      _cabinetId = null;
+      _boxId = null;
+      _autoMatchedDevice = false;
+    });
+    _showSnack('Remembered location cleared');
+  }
+
   @override
   Widget build(BuildContext context) {
     final catProvider = context.watch<CategoryProvider>();
@@ -691,9 +897,10 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor  = textColor.withValues(alpha: 0.55);
 
+    // Get boxes for the selected cabinet
     final boxes = _cabinetId != null
         ? cabProvider.getBoxesForCabinet(_cabinetId!)
-        : cabProvider.boxes;
+        : [];
 
     InputDecoration deco(String label, {String? hint}) =>
         InputDecoration(
@@ -748,380 +955,415 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                           fontSize: 16))),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 8),
-          children: [
-            // ── PHOTOS (multiple) ──────────────────────
-            section('Photos'),
-            SizedBox(
-              height: 100,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
+      body: _isLoadingLocation
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  ..._existingImageUrls.asMap().entries.map((e) =>
-                      _photoThumb(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.network(
-                            e.value,
+                  CircularProgressIndicator(color: Color(0xFF4ECDC4)),
+                  SizedBox(height: 16),
+                  Text('Loading your cabinets...'),
+                ],
+              ),
+            )
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 8),
+                children: [
+                  // ── PHOTOS (multiple) ──────────────────────
+                  section('Photos'),
+                  SizedBox(
+                    height: 100,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        ..._existingImageUrls.asMap().entries.map((e) =>
+                            _photoThumb(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(
+                                  e.value,
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 100, height: 100,
+                                    color: Colors.grey.shade300,
+                                    child: const Icon(Icons.broken_image),
+                                  ),
+                                ),
+                              ),
+                              onRemove: () => _removeExistingImage(e.key),
+                            )),
+                        ..._newImages.asMap().entries.map((e) =>
+                            _photoThumb(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  e.value,
+                                  width: 100,
+                                  height: 100,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              onRemove: () => _removeNewImage(e.key),
+                            )),
+                        GestureDetector(
+                          onTap: _pickPhoto,
+                          child: Container(
                             width: 100,
                             height: 100,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              width: 100, height: 100,
-                              color: Colors.grey.shade300,
-                              child: const Icon(Icons.broken_image),
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF2D2D2D)
+                                  : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: isDark
+                                      ? Colors.grey.shade700
+                                      : Colors.grey.shade300),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_a_photo_outlined,
+                                    size: 26,
+                                    color: isDark
+                                        ? Colors.grey.shade500
+                                        : Colors.grey.shade400),
+                                const SizedBox(height: 4),
+                                Text('Add',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: isDark
+                                            ? Colors.grey.shade500
+                                            : Colors.grey.shade500)),
+                              ],
                             ),
                           ),
                         ),
-                        onRemove: () => _removeExistingImage(e.key),
-                      )),
-                  ..._newImages.asMap().entries.map((e) =>
-                      _photoThumb(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.file(
-                            e.value,
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        onRemove: () => _removeNewImage(e.key),
-                      )),
-                  GestureDetector(
-                    onTap: _pickPhoto,
-                    child: Container(
-                      width: 100,
-                      height: 100,
-                      margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF2D2D2D)
-                            : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: isDark
-                                ? Colors.grey.shade700
-                                : Colors.grey.shade300),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      ],
+                    ),
+                  ),
+                  if (_isImgLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Row(
                         children: [
-                          Icon(Icons.add_a_photo_outlined,
-                              size: 26,
-                              color: isDark
-                                  ? Colors.grey.shade500
-                                  : Colors.grey.shade400),
-                          const SizedBox(height: 4),
-                          Text('Add',
+                          SizedBox(
+                              width: 14, height: 14,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Color(0xFF4ECDC4))),
+                          SizedBox(width: 8),
+                          Text('AI scanning…',
                               style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark
-                                      ? Colors.grey.shade500
-                                      : Colors.grey.shade500)),
+                                  fontSize: 12, color: Color(0xFF4ECDC4))),
                         ],
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_isImgLoading)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    SizedBox(
-                        width: 14, height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Color(0xFF4ECDC4))),
-                    SizedBox(width: 8),
-                    Text('AI scanning…',
+                    )
+                  else if (_existingImageUrls.isEmpty && _newImages.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '✨ AI can auto-fill details from a photo',
                         style: TextStyle(
-                            fontSize: 12, color: Color(0xFF4ECDC4))),
-                  ],
-                ),
-              )
-            else if (_existingImageUrls.isEmpty && _newImages.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  '✨ AI can auto-fill details from a photo',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: const Color(0xFF4ECDC4).withValues(alpha: 0.85)),
-                ),
-              ),
-
-            // ── BASIC INFO ──────────────────────────────
-            section('Basic Info'),
-            
-            // ✅ Name field with Voice Input + AI Auto-fill
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: VoiceTextField(
-                    controller: _nameCtrl,
-                    label: 'Item Name *',
-                    hint: 'e.g. Paracetamol 500mg',
-                    textCapitalization: TextCapitalization.words,
-                    validator: (v) => v == null || v.trim().isEmpty
-                        ? 'Name is required' : null,
-                    onVoiceResult: (text) {
-                      setState(() {});
-                      if (text.isNotEmpty) _autoFillFromName();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // AI autofill button
-                Tooltip(
-                  message: 'AI Auto-fill from name',
-                  child: InkWell(
-                    onTap: _isAiLoading ? null : _autoFillFromName,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 50, height: 56,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4ECDC4).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: const Color(0xFF4ECDC4)
-                                .withValues(alpha: 0.4)),
+                            fontSize: 11,
+                            color: const Color(0xFF4ECDC4).withValues(alpha: 0.85)),
                       ),
-                      child: _isAiLoading
-                          ? const Center(
-                              child: SizedBox(
-                                  width: 18, height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xFF4ECDC4))))
-                          : const Icon(Icons.auto_awesome,
-                              color: Color(0xFF4ECDC4)),
+                    ),
+
+                  // ── BASIC INFO ──────────────────────────────
+                  section('Basic Info'),
+
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: VoiceTextField(
+                          controller: _nameCtrl,
+                          label: 'Item Name *',
+                          hint: 'e.g. Paracetamol 500mg',
+                          textCapitalization: TextCapitalization.words,
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? 'Name is required' : null,
+                          onVoiceResult: (text) {
+                            setState(() {});
+                            if (text.isNotEmpty) _autoFillFromName();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'AI Auto-fill from name',
+                        child: InkWell(
+                          onTap: _isAiLoading ? null : _autoFillFromName,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            width: 50, height: 56,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4ECDC4).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: const Color(0xFF4ECDC4)
+                                      .withValues(alpha: 0.4)),
+                            ),
+                            child: _isAiLoading
+                                ? const Center(
+                                    child: SizedBox(
+                                        width: 18, height: 18,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Color(0xFF4ECDC4))))
+                                : const Icon(Icons.auto_awesome,
+                                    color: Color(0xFF4ECDC4)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.mic, size: 12, color: Color(0xFF4ECDC4)),
+                        const SizedBox(width: 4),
+                        Text(
+                          '🎤 Voice input · ✨ AI auto-fill from name',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: const Color(0xFF4ECDC4).withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-            // Voice & AI tips
-            Padding(
-              padding: const EdgeInsets.only(left: 4, top: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.mic, size: 12, color: Color(0xFF4ECDC4)),
-                  const SizedBox(width: 4),
-                  Text(
-                    '🎤 Voice input · ✨ AI auto-fill from name',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: const Color(0xFF4ECDC4).withValues(alpha: 0.8),
+                  const SizedBox(height: 12),
+
+                  VoiceTextField(
+                    controller: _descCtrl,
+                    label: 'Description',
+                    hint: 'Optional',
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 12),
+
+                  VoiceTextField(
+                    controller: _brandCtrl,
+                    label: 'Brand',
+                    hint: 'Optional',
+                  ),
+
+                  // ── CATEGORY ────────────────────────────────
+                  section('Category *'),
+                  DropdownButtonFormField<String>(
+                    value: _categoryId,
+                    decoration: deco('Category'),
+                    items: catProvider.categories.map((cat) =>
+                        DropdownMenuItem(
+                          value: cat.id,
+                          child: Row(children: [
+                            Text(cat.icon,
+                                style: const TextStyle(fontSize: 18)),
+                            const SizedBox(width: 8),
+                            Text(cat.name),
+                          ]),
+                        )).toList(),
+                    onChanged: (v) => setState(() => _categoryId = v),
+                    hint: const Text('Select category'),
+                    validator: (v) =>
+                        v == null ? 'Please select a category' : null,
+                  ),
+
+                  // ── LOCATION (OPTIONAL) ─────────────────────
+                  section('Location (Optional)'),
+
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: (_bleConnected ? Colors.green : const Color(0xFF4ECDC4))
+                          .withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: (_bleConnected ? Colors.green : const Color(0xFF4ECDC4))
+                              .withValues(alpha: 0.25)),
+                    ),
+                    child: Row(children: [
+                      Icon(
+                        _bleConnected ? Icons.bluetooth_connected : Icons.info_outline,
+                        color: _bleConnected ? Colors.green : const Color(0xFF4ECDC4),
+                        size: 15,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _autoMatchedDevice
+                              ? 'Location auto-filled from your connected smart cabinet.'
+                              : _bleConnected
+                                  ? 'Smart cabinet connected. Cabinet and box are optional — your last-used location is remembered automatically.'
+                                  : 'Cabinet and box are optional. Your last-used location is remembered automatically.',
+                          style: TextStyle(fontSize: 11, color: subColor),
+                        ),
+                      ),
+                      if (_cabinetId != null)
+                        GestureDetector(
+                          onTap: _clearRememberedLocation,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Text(
+                              'Clear',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _bleConnected
+                                    ? Colors.green
+                                    : const Color(0xFF4ECDC4),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ]),
+                  ),
+
+                  // Cabinet Dropdown
+                  DropdownButtonFormField<String>(
+                    value: _cabinetId,
+                    decoration: deco('Cabinet'),
+                    items: [
+                      const DropdownMenuItem(
+                          value: null, child: Text('No cabinet')),
+                      ...cabProvider.cabinets.map((c) =>
+                          DropdownMenuItem(value: c.id, child: Text(c.name))),
+                    ],
+                    onChanged: (v) => setState(() {
+                      _cabinetId = v;
+                      _boxId = null;
+                      _autoMatchedDevice = false;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Box Dropdown - shows boxes for selected cabinet
+                  DropdownButtonFormField<String>(
+                    value: _boxId,
+                    decoration: deco('Box / Shelf'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('No box')),
+                      ...boxes.map((b) =>
+                          DropdownMenuItem(value: b.id, child: Text(b.name))),
+                    ],
+                    onChanged: _cabinetId == null
+                        ? null
+                        : (v) => setState(() => _boxId = v),
+                  ),
+
+                  // ── QUANTITY ────────────────────────────────
+                  section('Quantity & Stock'),
+                  Row(children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: _qtyCtrl,
+                        decoration: deco('Quantity *'),
+                        keyboardType: TextInputType.number,
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Required';
+                          if (int.tryParse(v) == null) return 'Must be a number';
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        value: _unit,
+                        decoration: deco('Unit'),
+                        items: _units.map((u) =>
+                            DropdownMenuItem(value: u, child: Text(u))).toList(),
+                        onChanged: (v) => setState(() => _unit = v!),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                      controller: _lowStockCtrl,
+                      decoration: deco('Low Stock Alert At'),
+                      keyboardType: TextInputType.number),
+
+                  // ── STATUS ──────────────────────────────────
+                  section('Status'),
+                  DropdownButtonFormField<String>(
+                    value: _status,
+                    decoration: deco('Item Status'),
+                    items: _statuses.map((s) => DropdownMenuItem(
+                        value: s,
+                        child: Text(
+                            s[0].toUpperCase() + s.substring(1)))).toList(),
+                    onChanged: (v) => setState(() => _status = v!),
+                  ),
+
+                  // ── DATES ───────────────────────────────────
+                  section('Dates'),
+                  _DateRow(
+                    label: 'Production Date',
+                    date: _productionDate,
+                    onTap: _pickProduction,
+                    onClear: () => setState(() => _productionDate = null),
+                    isDark: isDark,
+                    subColor: subColor,
+                    textColor: textColor,
+                  ),
+                  const SizedBox(height: 12),
+                  _DateRow(
+                    label: 'Expiry Date',
+                    date: _expiryDate,
+                    onTap: _pickExpiry,
+                    onClear: () => setState(() => _expiryDate = null),
+                    isDark: isDark,
+                    subColor: subColor,
+                    textColor: textColor,
+                  ),
+
+                  // ── EXTRA ───────────────────────────────────
+                  section('Extra Info'),
+
+                  VoiceTextField(
+                    controller: _noteCtrl,
+                    label: 'Notes',
+                    hint: 'Any extra information',
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+
+                  VoiceTextField(
+                    controller: _tagsCtrl,
+                    label: 'Tags',
+                    hint: 'Comma separated, e.g. fever, adult',
+                  ),
+
+                  const SizedBox(height: 36),
+                  ElevatedButton(
+                    onPressed: _isSaving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4ECDC4),
+                      minimumSize: const Size.fromHeight(50),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13)),
+                    ),
+                    child: Text(
+                      _isEditing ? 'Update Item' : 'Add Item',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 16),
                     ),
                   ),
+                  const SizedBox(height: 30),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            
-            // ✅ Description with Voice Input
-            VoiceTextField(
-              controller: _descCtrl,
-              label: 'Description',
-              hint: 'Optional',
-              maxLines: 2,
-            ),
-            const SizedBox(height: 12),
-            
-            // ✅ Brand with Voice Input
-            VoiceTextField(
-              controller: _brandCtrl,
-              label: 'Brand',
-              hint: 'Optional',
-            ),
-
-            // ── CATEGORY ────────────────────────────────
-            section('Category *'),
-            DropdownButtonFormField<String>(
-              value: _categoryId,
-              decoration: deco('Category'),
-              items: catProvider.categories.map((cat) =>
-                  DropdownMenuItem(
-                    value: cat.id,
-                    child: Row(children: [
-                      Text(cat.icon,
-                          style: const TextStyle(fontSize: 18)),
-                      const SizedBox(width: 8),
-                      Text(cat.name),
-                    ]),
-                  )).toList(),
-              onChanged: (v) => setState(() => _categoryId = v),
-              hint: const Text('Select category'),
-              validator: (v) =>
-                  v == null ? 'Please select a category' : null,
-            ),
-
-            // ── LOCATION (OPTIONAL) ─────────────────────
-            section('Location (Optional)'),
-            Container(
-              padding: const EdgeInsets.all(10),
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4ECDC4).withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: const Color(0xFF4ECDC4).withValues(alpha: 0.25)),
-              ),
-              child: Row(children: [
-                const Icon(Icons.info_outline,
-                    color: Color(0xFF4ECDC4), size: 15),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Cabinet and box are optional. '
-                    'You can assign a location later.',
-                    style: TextStyle(fontSize: 11, color: subColor),
-                  ),
-                ),
-              ]),
-            ),
-            DropdownButtonFormField<String>(
-              value: _cabinetId,
-              decoration: deco('Cabinet'),
-              items: [
-                const DropdownMenuItem(
-                    value: null, child: Text('No cabinet')),
-                ...cabProvider.cabinets.map((c) =>
-                    DropdownMenuItem(value: c.id, child: Text(c.name))),
-              ],
-              onChanged: (v) => setState(() {
-                _cabinetId = v;
-                _boxId = null;
-              }),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _boxId,
-              decoration: deco('Box / Shelf'),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('No box')),
-                ...boxes.map((b) =>
-                    DropdownMenuItem(value: b.id, child: Text(b.name))),
-              ],
-              onChanged: _cabinetId == null
-                  ? null
-                  : (v) => setState(() => _boxId = v),
-            ),
-
-            // ── QUANTITY ────────────────────────────────
-            section('Quantity & Stock'),
-            Row(children: [
-              Expanded(
-                flex: 2,
-                child: TextFormField(
-                  controller: _qtyCtrl,
-                  decoration: deco('Quantity *'),
-                  keyboardType: TextInputType.number,
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Required';
-                    if (int.tryParse(v) == null) return 'Must be a number';
-                    return null;
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: DropdownButtonFormField<String>(
-                  value: _unit,
-                  decoration: deco('Unit'),
-                  items: _units.map((u) =>
-                      DropdownMenuItem(value: u, child: Text(u))).toList(),
-                  onChanged: (v) => setState(() => _unit = v!),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            TextFormField(
-                controller: _lowStockCtrl,
-                decoration: deco('Low Stock Alert At'),
-                keyboardType: TextInputType.number),
-
-            // ── STATUS ──────────────────────────────────
-            section('Status'),
-            DropdownButtonFormField<String>(
-              value: _status,
-              decoration: deco('Item Status'),
-              items: _statuses.map((s) => DropdownMenuItem(
-                  value: s,
-                  child: Text(
-                      s[0].toUpperCase() + s.substring(1)))).toList(),
-              onChanged: (v) => setState(() => _status = v!),
-            ),
-
-            // ── DATES ───────────────────────────────────
-            section('Dates'),
-            _DateRow(
-              label: 'Production Date',
-              date: _productionDate,
-              onTap: _pickProduction,
-              onClear: () => setState(() => _productionDate = null),
-              isDark: isDark,
-              subColor: subColor,
-              textColor: textColor,
-            ),
-            const SizedBox(height: 12),
-            _DateRow(
-              label: 'Expiry Date',
-              date: _expiryDate,
-              onTap: _pickExpiry,
-              onClear: () => setState(() => _expiryDate = null),
-              isDark: isDark,
-              subColor: subColor,
-              textColor: textColor,
-            ),
-
-            // ── EXTRA ───────────────────────────────────
-            section('Extra Info'),
-            
-            // ✅ Notes with Voice Input
-            VoiceTextField(
-              controller: _noteCtrl,
-              label: 'Notes',
-              hint: 'Any extra information',
-              maxLines: 3,
-            ),
-            const SizedBox(height: 12),
-            
-            // ✅ Tags with Voice Input
-            VoiceTextField(
-              controller: _tagsCtrl,
-              label: 'Tags',
-              hint: 'Comma separated, e.g. fever, adult',
-            ),
-
-            const SizedBox(height: 36),
-            ElevatedButton(
-              onPressed: _isSaving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4ECDC4),
-                minimumSize: const Size.fromHeight(50),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(13)),
-              ),
-              child: Text(
-                _isEditing ? 'Update Item' : 'Add Item',
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 16),
-              ),
-            ),
-            const SizedBox(height: 30),
-          ],
-        ),
-      ),
     );
   }
 }

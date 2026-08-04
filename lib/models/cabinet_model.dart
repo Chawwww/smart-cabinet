@@ -12,11 +12,17 @@ class CabinetModel {
   final bool isFavorite;
   final int itemCount;
   final int boxCount;
-  
-  // ✅ NEW: Sharing fields
+
+  // ✅ Sharing fields
   final List<String> sharedWith;
   final Map<String, String> permissions; // userId -> 'view' | 'edit' | 'admin'
-  
+
+  // ✅ ADDED — BLE device id of the physical ESP32 this cabinet represents,
+  // if the user has linked one. Lets the app recognize "you're connected
+  // to the cabinet you set up as Kitchen" instead of only remembering
+  // the last-picked location in Add Item.
+  final String? bleDeviceId;
+
   final DateTime createdAt;
   final DateTime updatedAt;
   final String userId;
@@ -34,6 +40,7 @@ class CabinetModel {
     this.boxCount = 0,
     this.sharedWith = const [],
     this.permissions = const {},
+    this.bleDeviceId, // ✅ ADDED
     required this.createdAt,
     required this.updatedAt,
     required this.userId,
@@ -55,6 +62,7 @@ class CabinetModel {
       boxCount: data['boxCount'] ?? 0,
       sharedWith: List<String>.from(data['sharedWith'] ?? []),
       permissions: Map<String, String>.from(data['permissions'] ?? {}),
+      bleDeviceId: data['bleDeviceId'], // ✅ ADDED
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       userId: data['userId'] ?? '',
@@ -74,6 +82,7 @@ class CabinetModel {
       'boxCount': boxCount,
       'sharedWith': sharedWith,
       'permissions': permissions,
+      'bleDeviceId': bleDeviceId, // ✅ ADDED
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       'userId': userId,
@@ -93,6 +102,8 @@ class CabinetModel {
     int? boxCount,
     List<String>? sharedWith,
     Map<String, String>? permissions,
+    String? bleDeviceId,            // ✅ ADDED
+    bool clearBleDeviceId = false,  // ✅ ADDED — explicit unlink
     DateTime? createdAt,
     DateTime? updatedAt,
     String? userId,
@@ -110,6 +121,7 @@ class CabinetModel {
       boxCount: boxCount ?? this.boxCount,
       sharedWith: sharedWith ?? this.sharedWith,
       permissions: permissions ?? this.permissions,
+      bleDeviceId: clearBleDeviceId ? null : (bleDeviceId ?? this.bleDeviceId), // ✅ ADDED
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       userId: userId ?? this.userId,
@@ -123,6 +135,9 @@ class CabinetModel {
 
   String get itemText => itemCount == 1 ? '1 item' : '$itemCount items';
   String get boxText => boxCount == 1 ? '1 box' : '$boxCount boxes';
+
+  // ✅ ADDED
+  bool get isLinkedToDevice => bleDeviceId != null && bleDeviceId!.isNotEmpty;
 
   // ✅ Check if user has access
   bool hasAccess(String userId) {

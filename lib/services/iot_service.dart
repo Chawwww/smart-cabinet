@@ -18,6 +18,19 @@ extension CabinetDoorX on CabinetDoor {
   String get label => this == CabinetDoor.upper ? 'Upper Door' : 'Lower Door';
 }
 
+// ✅ ADDED — string -> CabinetDoor helper, used by screens that store a
+// door id (e.g. BoxModel.doorId) and need the enum to call IoTService.
+CabinetDoor? cabinetDoorFromId(String? id) {
+  switch (id) {
+    case AppConstants.doorUpper:
+      return CabinetDoor.upper;
+    case AppConstants.doorLower:
+      return CabinetDoor.lower;
+    default:
+      return null;
+  }
+}
+
 class IoTService {
   static final IoTService _instance = IoTService._internal();
   factory IoTService() => _instance;
@@ -54,6 +67,10 @@ class IoTService {
   bool get isScanning  => _isScanning;
   bool get isUpperDoorOpen => _upperDoorOpen;
   bool get isLowerDoorOpen => _lowerDoorOpen;
+
+  // ✅ ADDED — public getter so screens (Add/Edit Cabinet, Add Item) can
+  // know WHICH device is connected, not just whether one is.
+  String? get connectedDeviceId => _connectedDeviceId;
 
   List<DiscoveredDevice> get discoveredDevices => _discoveredDevices;
 
@@ -143,7 +160,7 @@ class IoTService {
   }
 
   // ──────────────────────────────────────────────
-  // Door Sensor — now per-door
+  // Door Sensor — per-door, with change detection
   // ──────────────────────────────────────────────
   void _listenDoorSensor(CabinetDoor door) {
     if (_connectedDeviceId == null) return;
@@ -163,11 +180,22 @@ class IoTService {
         final value = utf8.decode(data); // "OPEN" or "CLOSED"
         final isOpen = value.trim().toUpperCase() == "OPEN";
 
+        // Remember what this door's state was BEFORE this update.
+        final previousState =
+            door == CabinetDoor.upper ? _upperDoorOpen : _lowerDoorOpen;
+
         if (door == CabinetDoor.upper) {
           _upperDoorOpen = isOpen;
         } else {
           _lowerDoorOpen = isOpen;
         }
+
+        // The ESP32 sends a status update for BOTH doors any time EITHER
+        // one changes. Without this check, the untouched door would also
+        // emit a (spurious, unchanged) event every time — causing a
+        // notification to pop for a door that didn't actually move.
+        // Only emit when this specific door's state actually flipped.
+        if (isOpen == previousState) return;
 
         _doorStreamController.add({
           "door":   door.id,      // "upper" or "lower"
@@ -188,7 +216,7 @@ class IoTService {
   }
 
   // ──────────────────────────────────────────────
-  // Servo — now requires specifying which door
+  // Servo — requires specifying which door
   // ──────────────────────────────────────────────
   Future<void> sendServoCommand(CabinetDoor door, int angle) async {
     if (_connectedDeviceId == null) {
@@ -212,7 +240,7 @@ class IoTService {
   }
 
   // ──────────────────────────────────────────────
-  // LED — now requires specifying which door
+  // LED — requires specifying which door
   // ──────────────────────────────────────────────
   Future<void> sendLEDCommand(CabinetDoor door, bool on) async {
     if (_connectedDeviceId == null) {
@@ -239,7 +267,8 @@ class IoTService {
   // Open / Close — per door
   // ──────────────────────────────────────────────
   Future<void> openDoor(CabinetDoor door) async {
-    await sendServoCommand(door, 90);
+    // Must be > 90 to match the firmware's "angle > 90 => unlock" check.
+    await sendServoCommand(door, 180);
   }
 
   Future<void> closeDoor(CabinetDoor door) async {

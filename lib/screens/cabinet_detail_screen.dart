@@ -6,10 +6,11 @@ import '../providers/cabinet_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/item_provider.dart';
 import '../screens/share_cabinet_screen.dart';
+import '../screens/add_edit_box_screen.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_widget.dart';
-import 'item_detail_screen.dart';
-import 'add_edit_item_screen.dart';
+import 'item_detail_screen.dart';  // ← ItemDetailScreen
+import 'add_edit_item_screen.dart'; // ← AddEditItemScreen
 
 class CabinetDetailScreen extends StatefulWidget {
   final String cabinetId;
@@ -60,7 +61,6 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
           ],
         ),
         actions: [
-          // ✅ Share Button - AppBar
           if (isOwner)
             IconButton(
               icon: const Icon(Icons.share_outlined, color: Color(0xFF4ECDC4)),
@@ -76,7 +76,6 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
               tooltip: 'Share Cabinet',
             ),
           
-          // Permission badge in AppBar
           if (!isOwner && cabinet.hasAccess(authProvider.userId))
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -133,7 +132,6 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
                           ],
                         ),
                       ),
-                      // Favorite icon
                       if (cabinet.isFavorite)
                         const Icon(Icons.favorite, color: Colors.red, size: 20),
                     ],
@@ -156,7 +154,6 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
                     ],
                   ),
                   
-                  // ✅ Shared users count
                   if (isOwner && cabinet.sharedWith.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -175,7 +172,6 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
                       ),
                     ),
                   
-                  // ✅ Share button in body (for easier access)
                   if (isOwner)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -210,27 +206,63 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
             ),
           ),
 
-          // ── Add Item Button ──
+          // ── Action Buttons Row ──
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AddEditItemScreen(),
+            child: Row(
+              children: [
+                // Add Item Button
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AddEditItemScreen(),
+                        ),
+                      );
+                      if (result == true) {
+                        context.read<ItemProvider>().loadItems();
+                      }
+                    },
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Item'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4ECDC4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
                 ),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Item to this Cabinet'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4ECDC4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                const SizedBox(width: 10),
+                // Add Box Button
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AddEditBoxScreen(
+                            presetCabinetId: cabinet.id,
+                          ),
+                        ),
+                      );
+                      if (result == true) {
+                        context.read<CabinetProvider>().loadBoxes();
+                      }
+                    },
+                    icon: const Icon(Icons.folder_open, size: 16),
+                    label: const Text('Add Box'),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF4ECDC4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
 
@@ -331,7 +363,6 @@ class _ItemCard extends StatelessWidget {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = textColor.withValues(alpha: 0.55);
 
-    // Determine accent color
     Color accent;
     try {
       accent = item.color != null
@@ -360,7 +391,6 @@ class _ItemCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── TOP: photo or emoji ─────────────────────
             Expanded(
               flex: 6,
               child: Stack(
@@ -381,7 +411,6 @@ class _ItemCard extends StatelessWidget {
                           : _emojiBox(accent, isDark),
                     ),
                   ),
-                  // Favorite heart
                   if (item.isFavorite)
                     Positioned(
                       top: 6, left: 6,
@@ -395,12 +424,10 @@ class _ItemCard extends StatelessWidget {
                             color: Colors.red, size: 12),
                       ),
                     ),
-                  // Status badge
                   Positioned(
                     top: 6, right: 6,
                     child: _badge(),
                   ),
-                  // Taken ribbon
                   if (item.status == 'taken')
                     Positioned(
                       bottom: 0, left: 0, right: 0,
@@ -419,7 +446,6 @@ class _ItemCard extends StatelessWidget {
                 ],
               ),
             ),
-            // ── BOTTOM: info ────────────────────────────
             Expanded(
               flex: 4,
               child: Padding(

@@ -53,7 +53,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             ),
           );
           Navigator.pop(context);
-        }
+  }
       });
       return;
     }
@@ -217,9 +217,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 ),
               ),
               const SizedBox(height: 20),
-            ],
-          ),
-        );
+        ],
+      ),
+    );
       }),
     );
   }
@@ -315,12 +315,12 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           .countItemsFromPhoto(File(picked.path), _item.name);
       if (!mounted) return;
       _showAiCountResult(result);
-    } catch (e) {
+      } catch (e) {
       if (mounted) _showSnack('AI count failed: $e');
-    } finally {
+      } finally {
       if (mounted) setState(() => _isAiCounting = false);
+      }
     }
-  }
 
   void _showAiCountResult(AiCountResult result) {
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -458,12 +458,12 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   Future<void> _toggleFavourite() async {
     if (!_isInitialized) return;
     
-    final updated = _item.copyWith(
-      isFavorite: !_item.isFavorite,
-      updatedAt: DateTime.now(),
-    );
+      final updated = _item.copyWith(
+        isFavorite: !_item.isFavorite,
+        updatedAt: DateTime.now(),
+      );
     setState(() => _item = updated);
-    await context.read<ItemProvider>().updateItem(updated);
+      await context.read<ItemProvider>().updateItem(updated);
   }
 
   Future<void> _delete() async {
@@ -623,8 +623,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 color: Color(0xFF4ECDC4)),
             onPressed: () async {
               final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
+              context,
+              MaterialPageRoute(
                     builder: (_) => AddEditItemScreen(item: _item)),
               );
               if (result == true && mounted) {
@@ -646,7 +646,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         ],
       ),
       body: Column(
-        children: [
+                children: [
           // SUPERVISOR REQ 5: Photo(s) displayed directly, swipeable
           _buildHeroImage(accent, isDark),
 
@@ -686,11 +686,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 _buildQuantity(textColor, subColor, isDark),
                 _buildHistory(textColor, subColor),
               ],
-            ),
-          ),
+                                ),
+                              ),
         ],
-      ),
-    );
+                            ),
+                          );
   }
 
   // ── Hero image / photo carousel ─────────────────────────
@@ -700,16 +700,16 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     if (images.isEmpty) {
       return Container(
         height: 180,
-        width: double.infinity,
+                      width: double.infinity,
         color: accent.withValues(alpha: isDark ? 0.15 : 0.08),
-        child: Center(
+                      child: Center(
             child: Text(_item.icon ?? '📦',
                 style: const TextStyle(fontSize: 72))),
       );
     }
 
     return Stack(
-      children: [
+                    children: [
         Container(
           height: 180,
           width: double.infinity,
@@ -724,9 +724,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               errorBuilder: (_, __, ___) => Center(
                   child: Text(_item.icon ?? '📦',
                       style: const TextStyle(fontSize: 72))),
-            ),
-          ),
-        ),
+                        ),
+                      ),
+                    ),
         if (images.length > 1) ...[
           Positioned(
             bottom: 8,
@@ -746,7 +746,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                     color: active
                         ? Colors.white
                         : Colors.white.withValues(alpha: 0.5),
-                  ),
+                        ),
                 );
               }),
             ),
@@ -790,12 +790,12 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   Widget _buildDetails(
       Color textColor, Color subColor, bool isDark, Color accent) {
     return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
+                        padding: const EdgeInsets.all(16),
+                          children: [
         // Status
         Row(children: [
           _statusChip(_item.status),
-          const SizedBox(width: 8),
+                                  const SizedBox(width: 8),
           if (_item.lastTakenBy != null)
             Expanded(
               child: Text(
@@ -804,7 +804,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 style: TextStyle(fontSize: 11, color: subColor),
                 overflow: TextOverflow.ellipsis,
               ),
-            ),
+                              ),
         ]),
         const SizedBox(height: 14),
 
@@ -819,27 +819,27 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: accent.withValues(alpha: 0.25)),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                 Row(children: [
                   Icon(Icons.description_outlined, size: 16, color: accent),
                   const SizedBox(width: 6),
                   Text('Description',
-                      style: TextStyle(
+                              style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           color: accent)),
                 ]),
-                const SizedBox(height: 8),
-                Text(
-                  _item.description!,
+                            const SizedBox(height: 8),
+                            Text(
+                              _item.description!,
                   style: TextStyle(
                       fontSize: 14, height: 1.4, color: textColor),
-                ),
-              ],
-            ),
-          ),
+                            ),
+                          ],
+                        ),
+                      ),
           const SizedBox(height: 14),
         ],
 
@@ -851,7 +851,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             _row('Brand', _item.brand!, textColor, subColor),
           if (_item.note != null)
             _row('Note', _item.note!, textColor, subColor),
-          if (_item.tags.isNotEmpty)
+                  if (_item.tags.isNotEmpty)
             _row('Tags', _item.tags.join(', '), textColor, subColor),
         ]),
         const SizedBox(height: 10),
@@ -913,12 +913,12 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           context,
           MaterialPageRoute(
             builder: (_) => const MedicineInfoScreen(),
-          ),
+                                ),
         ),
         icon: const Text('💊', style: TextStyle(fontSize: 18)),
         label: const Text(
           '药物查询 / Medicine Info',
-          style: TextStyle(
+                                  style: TextStyle(
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -928,9 +928,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           minimumSize: const Size.fromHeight(48),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
+                            ),
+                        ),
+                      ),
     );
   }
 
@@ -944,15 +944,15 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
       padding: const EdgeInsets.all(16),
       children: [
         // Three-number display
-        Card(
+                    Card(
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16)),
-          child: Padding(
+                      child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
+                          children: [
                   _qtyBox('In Cabinet', '${_item.quantity}',
                       const Color(0xFF4ECDC4), _item.unit, textColor),
                   Container(width: 1, height: 50,
@@ -973,9 +973,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                     Text('Usage',
                         style: TextStyle(
                             fontSize: 12, color: subColor)),
-                    Text(
+                            Text(
                         '${(pct * 100).toInt()}% consumed',
-                        style: TextStyle(
+                              style: TextStyle(
                             fontSize: 12, color: subColor)),
                   ]),
               const SizedBox(height: 6),
@@ -993,8 +993,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 ),
               ),
             ]),
-          ),
-        ),
+                              ),
+                            ),
         const SizedBox(height: 14),
 
         // Action buttons
@@ -1031,8 +1031,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 minimumSize: const Size.fromHeight(48),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
+                              ),
+                            ),
           ),
         ]),
         const SizedBox(height: 10),
@@ -1059,7 +1059,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         ),
         const SizedBox(height: 4),
         // SUPERVISOR REQ 7: Limitation notice
-        Text(
+                                  Text(
           '⚠️ Limitation: AI counting accuracy depends on photo '
           'quality and item visibility. Physical verification is '
           'always recommended.',
@@ -1068,8 +1068,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               color: subColor,
               fontStyle: FontStyle.italic),
           textAlign: TextAlign.center,
-        ),
-      ],
+                                  ),
+                                ],
     );
   }
 
@@ -1091,9 +1091,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             Text('Use "Take Out" to record withdrawals',
                 style: TextStyle(fontSize: 12, color: subColor)),
           ],
-        ),
-      );
-    }
+            ),
+    );
+  }
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
@@ -1111,11 +1111,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12)),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(12),
             child: Row(children: [
               Container(
                 width: 46, height: 46,
-                decoration: BoxDecoration(
+      decoration: BoxDecoration(
                   color: Colors.orange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1125,23 +1125,24 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.orange)),
-                ),
-              ),
+        ),
+      ),
               const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+              Text(
                       '$qty ${_item.unit} taken by $by',
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
                           color: textColor),
-                    ),
+          ),
                     if (note != null && note.isNotEmpty)
                       Text(note,
-                          style: TextStyle(
+              style: TextStyle(
                               fontSize: 12, color: textColor
                                   .withValues(alpha: 0.6))),
                     if (at != null)
@@ -1150,11 +1151,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                               fontSize: 11, color: textColor
                                   .withValues(alpha: 0.45))),
                   ],
-                ),
               ),
+            ),
             ]),
-          ),
-        );
+      ),
+    );
       },
     );
   }
@@ -1195,7 +1196,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             if (header != null) ...[
               Text(header,
                   style: const TextStyle(
-                      fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w600,
                       fontSize: 13,
                       color: Color(0xFF4ECDC4))),
               const Divider(height: 14),

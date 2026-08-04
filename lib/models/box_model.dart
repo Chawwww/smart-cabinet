@@ -15,6 +15,11 @@ class BoxModel {
 
   final int? capacity;
 
+  // ✅ ADDED — which physical smart-cabinet door this box sits behind,
+  // if any. Matches AppConstants.doorUpper / AppConstants.doorLower.
+  // Most boxes (plain shelves/drawers with no actuator) leave this null.
+  final String? doorId;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -29,6 +34,7 @@ class BoxModel {
     this.icon,
     this.color,
     this.capacity,
+    this.doorId, // ✅ ADDED
     required this.createdAt,
     required this.updatedAt,
     required this.userId,
@@ -55,6 +61,8 @@ class BoxModel {
       color: data['color'],
 
       capacity: data['capacity'],
+
+      doorId: data['doorId'], // ✅ ADDED
 
       createdAt:
           (data['createdAt'] as Timestamp?)?.toDate() ??
@@ -84,6 +92,8 @@ class BoxModel {
 
       'capacity': capacity,
 
+      'doorId': doorId, // ✅ ADDED
+
       'createdAt': Timestamp.fromDate(createdAt),
 
       'updatedAt': Timestamp.fromDate(updatedAt),
@@ -101,6 +111,8 @@ class BoxModel {
     String? icon,
     String? color,
     int? capacity,
+    String? doorId,          // ✅ ADDED
+    bool clearDoorId = false, // ✅ ADDED — explicit way to null it out
     DateTime? createdAt,
     DateTime? updatedAt,
     String? userId,
@@ -121,6 +133,8 @@ class BoxModel {
       color: color ?? this.color,
 
       capacity: capacity ?? this.capacity,
+
+      doorId: clearDoorId ? null : (doorId ?? this.doorId), // ✅ ADDED
 
       createdAt: createdAt ?? this.createdAt,
 
@@ -144,6 +158,9 @@ class BoxModel {
 
   bool get isContainer =>
       type.toLowerCase() == 'container';
+
+  // ✅ ADDED — whether this box is actually wired to a real door/LED
+  bool get hasSmartDoor => doorId != null && doorId!.isNotEmpty;
 
   String get displayCapacity {
     if (capacity == null) {

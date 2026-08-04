@@ -1,4 +1,3 @@
-// lib/providers/item_provider.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,6 +12,8 @@ class ItemProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   StreamSubscription? _itemsSubscription;
+
+  static const _tempIdPrefix = 'local_';
 
   // ── Getters ──────────────────────────────────────────────
   List<ItemModel> get items => _items;
@@ -37,6 +38,8 @@ class ItemProvider extends ChangeNotifier {
   List<ItemModel> get outOfStockItems =>
       _items.where((i) => i.isOutOfStock).toList();
 
+  bool _isLocalId(String? id) => id != null && id.startsWith(_tempIdPrefix);
+
   // ── Load Items ──────────────────────────────────────────
   void loadItems() {
     if (_itemsSubscription != null) return;
@@ -44,10 +47,14 @@ class ItemProvider extends ChangeNotifier {
 
     _itemsSubscription = _firestoreService.getItems().listen(
       (items) {
-        _items = items;
+        // Preserve any optimistic (local-only) items that Firestore
+        // hasn't caught up with yet, so they don't flicker out of the
+        // list while their write is still in flight.
+        final localOnly = _items.where((i) => _isLocalId(i.id)).toList();
+        _items = [...localOnly, ...items];
         _error = null;
         _setLoading(false);
-        debugPrint('📦 Items loaded: ${items.length}');
+        debugPrint('📦 Items loaded: ${items.length} (+${localOnly.length} pending)');
       },
       onError: (e) {
         _error = e.toString();
@@ -74,16 +81,65 @@ class ItemProvider extends ChangeNotifier {
     debugPrint('🧹 ItemProvider data cleared');
   }
 
+  // ── Optimistic local add ────────────────────────────────
+  /// Inserts [item] into the visible list immediately, before Firestore
+  /// confirms the write. If it has no id yet, a temporary local id is
+  /// assigned so it can be found again later (patched or removed).
+  ItemModel addItemLocally(ItemModel item) {
+    final localItem = item.id == null
+        ? item.copyWith(
+            id: '$_tempIdPrefix${DateTime.now().microsecondsSinceEpoch}')
+        : item;
+    _items.insert(0, localItem);
+    notifyListeners();
+    return localItem;
+  }
+
+  /// Removes an optimistic placeholder — e.g. because the Firestore write
+  /// failed, or because it's now been superseded by the real synced item.
+  void removeItemLocally(String id) {
+    _items.removeWhere((i) => i.id == id);
+    notifyListeners();
+  }
+
+  /// Replaces a local placeholder item (matched by [localId]) with the
+  /// real item once we know its Firestore id / final data.
+  void replaceLocalItem(String localId, ItemModel realItem) {
+    final idx = _items.indexWhere((i) => i.id == localId);
+    if (idx != -1) {
+      _items[idx] = realItem;
+    } else {
+      _items.insert(0, realItem);
+    }
+    notifyListeners();
+  }
+
   // ── Add Item ────────────────────────────────────────────
-  Future<bool> addItem(ItemModel item) async {
+  /// Writes [item] to Firestore and returns the new document id,
+  /// or null if the write failed.
+  Future<String?> addItem(ItemModel item) async {
     try {
-      await _firestoreService.addItem(item);
+      final docId = await _firestoreService.addItem(item);
       _error = null;
-      return true;
+      
+      // ✅ IMPROVED: If we have a local version with same data, replace it
+      final localItem = _items.firstWhere(
+        (i) => _isLocalId(i.id) && i.name == item.name && i.createdAt == item.createdAt,
+        orElse: () => null as ItemModel,
+      );
+      
+      if (localItem != null && localItem.id != docId) {
+        // Replace the local placeholder with the real document
+        final realItem = item.copyWith(id: docId);
+        _items[_items.indexOf(localItem)] = realItem;
+        notifyListeners();
+      }
+      
+      return docId;
     } catch (e) {
       _error = e.toString();
       notifyListeners();
-      return false;
+      return null;
     }
   }
 
@@ -110,7 +166,9 @@ class ItemProvider extends ChangeNotifier {
     try {
       _items.removeWhere((i) => i.id == itemId);
       notifyListeners();
-      await _firestoreService.deleteItem(itemId);
+      if (!_isLocalId(itemId)) {
+        await _firestoreService.deleteItem(itemId);
+      }
       _error = null;
       return true;
     } catch (e) {

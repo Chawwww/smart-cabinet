@@ -19,12 +19,12 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   bool _isConnecting = false;
   String? _selectedDeviceId;
   List<DiscoveredDevice> _devices = [];
-  
+
   // Door states
   bool _upperDoorOpen = false;
   bool _lowerDoorOpen = false;
   String _connectionStatus = 'Disconnected';
-  
+
   // LED states
   bool _upperLedOn = false;
   bool _lowerLedOn = false;
@@ -42,12 +42,12 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
 
   void _listenToIoTEvents() {
     final iotService = context.read<IoTService>();
-    
+
     // Listen to door events
     iotService.doorEvents.listen((event) {
       final door = event['door'] as String? ?? '';
       final isOpen = event['isOpen'] as bool? ?? false;
-      
+
       setState(() {
         if (door == 'upper') {
           _upperDoorOpen = isOpen;
@@ -55,7 +55,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           _lowerDoorOpen = isOpen;
         }
       });
-      
+
       // Show notification when door state changes
       if (door == 'upper') {
         _showDoorNotification('Upper Door', isOpen);
@@ -63,11 +63,11 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
         _showDoorNotification('Lower Door', isOpen);
       }
     });
-    
+
     // Listen to connection status
     iotService.connectionStatus.listen((status) {
       setState(() => _connectionStatus = status);
-      
+
       if (status == 'Connected') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -87,10 +87,10 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   }
 
   void _showDoorNotification(String doorName, bool isOpen) {
-    final message = isOpen 
-        ? '🔓 $doorName opened' 
+    final message = isOpen
+        ? '🔓 $doorName opened'
         : '🔒 $doorName closed';
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -107,13 +107,13 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     });
 
     final iotService = context.read<IoTService>();
-    
+
     // Start scanning
     await iotService.startScan();
-    
+
     // Listen for discovered devices
     await Future.delayed(const Duration(seconds: 5));
-    
+
     setState(() {
       _devices = iotService.discoveredDevices;
       _isScanning = false;
@@ -171,7 +171,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
 
   Future<void> _toggleDoor(String door) async {
     final iotService = context.read<IoTService>();
-    
+
     try {
       if (door == 'upper') {
         if (_upperDoorOpen) {
@@ -196,9 +196,35 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     }
   }
 
+  // FIXED: previously both "Open Both" and "Close Both" called the same
+  // toggle logic, so "Close Both" could actually open a closed door
+  // instead of closing it. These now call the explicit open/close
+  // methods on IoTService so each button always does what it says.
+  Future<void> _openBothDoors() async {
+    final iotService = context.read<IoTService>();
+    try {
+      await iotService.openBothDoors();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _closeBothDoors() async {
+    final iotService = context.read<IoTService>();
+    try {
+      await iotService.closeBothDoors();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Future<void> _toggleLED(String door) async {
     final iotService = context.read<IoTService>();
-    
+
     try {
       if (door == 'upper') {
         _upperLedOn = !_upperLedOn;
@@ -438,16 +464,14 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
         const SizedBox(height: 12),
 
         // ── Both Doors ─────────────────────────────────────
+        // FIXED: now call the explicit open/close methods instead of
+        // both calling _toggleDoor (which made "Close Both" behave the
+        // same as "Open Both" and could open an already-closed door).
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () {
-                  _toggleDoor('upper');
-                  Future.delayed(const Duration(milliseconds: 500), () {
-                    _toggleDoor('lower');
-                  });
-                },
+                onPressed: _openBothDoors,
                 icon: const Icon(Icons.open_in_new),
                 label: const Text('Open Both'),
                 style: OutlinedButton.styleFrom(
@@ -459,12 +483,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () {
-                  _toggleDoor('upper');
-                  Future.delayed(const Duration(milliseconds: 500), () {
-                    _toggleDoor('lower');
-                  });
-                },
+                onPressed: _closeBothDoors,
                 icon: const Icon(Icons.close),
                 label: const Text('Close Both'),
                 style: OutlinedButton.styleFrom(
@@ -580,9 +599,9 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   Widget _buildItemsSection() {
     final itemProvider = context.watch<ItemProvider>();
     final items = itemProvider.items;
-    
+
     // Filter items that have cabinetId matching current cabinet
-    final cabinetItems = items.where((item) => 
+    final cabinetItems = items.where((item) =>
       item.cabinetId != null && item.cabinetId!.isNotEmpty
     ).toList();
 

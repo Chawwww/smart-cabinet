@@ -66,6 +66,45 @@ class CabinetProvider extends ChangeNotifier {
     );
   }
 
+  // ✅ Force load cabinets - returns Future that completes when data arrives
+  Future<void> forceLoadCabinets() async {
+    // Cancel existing subscription
+    _cabinetSubscription?.cancel();
+    _cabinetSubscription = null;
+    _cabinets = [];
+    
+    final completer = Completer<void>();
+    
+    // Create new subscription
+    _cabinetSubscription = _firestoreService.getCabinets().listen(
+      (cabinets) {
+        _cabinets = cabinets;
+        _error = null;
+        _setLoading(false);
+        debugPrint('🗄️ Cabinets force loaded: ${cabinets.length}');
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      },
+      onError: (error) {
+        _error = error.toString();
+        _setLoading(false);
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+      },
+    );
+    
+    // Timeout fallback
+    return completer.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        debugPrint('⚠️ Cabinet load timeout - continuing anyway');
+        return;
+      },
+    );
+  }
+
   // ── Load Boxes ──────────────────────────────────────────
   void loadBoxes() {
     if (_boxSubscription != null) return;
@@ -79,6 +118,43 @@ class CabinetProvider extends ChangeNotifier {
       onError: (error) {
         _error = error.toString();
         notifyListeners();
+      },
+    );
+  }
+
+  // ✅ Force load boxes - returns Future that completes when data arrives
+  Future<void> forceLoadBoxes() async {
+    // Cancel existing subscription
+    _boxSubscription?.cancel();
+    _boxSubscription = null;
+    _boxes = [];
+    
+    final completer = Completer<void>();
+    
+    // Create new subscription
+    _boxSubscription = _firestoreService.getBoxes().listen(
+      (boxes) {
+        _boxes = boxes;
+        _error = null;
+        debugPrint('📦 Boxes force loaded: ${boxes.length}');
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      },
+      onError: (error) {
+        _error = error.toString();
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+      },
+    );
+    
+    // Timeout fallback
+    return completer.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        debugPrint('⚠️ Box load timeout - continuing anyway');
+        return;
       },
     );
   }
