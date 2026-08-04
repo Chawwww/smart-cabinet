@@ -52,6 +52,7 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
     super.dispose();
   }
 
+  // ── ✅ FIXED: Save method with reload ──────────────────────
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
@@ -67,16 +68,30 @@ class _AddEditCategoryScreenState extends State<AddEditCategoryScreen> {
         updatedAt: DateTime.now(),
         userId: userId,
       );
+      
+      final categoryProvider = context.read<CategoryProvider>();
+      
       if (widget.category == null) {
-        await context.read<CategoryProvider>().addCategory(cat);
+        // ✅ Add category with optimistic update
+        await categoryProvider.addCategory(cat);
       } else {
-        await context.read<CategoryProvider>().updateCategory(cat);
+        // ✅ Update category
+        await categoryProvider.updateCategory(cat);
       }
-      if (mounted) Navigator.pop(context, true);
+      
+      if (mounted) {
+        // ✅ Force reload to show the new category immediately
+        categoryProvider.reloadCategories();
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+          SnackBar(
+            content: Text('Error: $e'), 
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

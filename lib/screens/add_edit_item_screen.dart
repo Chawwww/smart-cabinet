@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 import '../models/item_model.dart';
 import '../models/cabinet_model.dart';
@@ -19,7 +18,13 @@ import '../widgets/voice_text_field.dart';
 
 class AddEditItemScreen extends StatefulWidget {
   final ItemModel? item;
-  const AddEditItemScreen({super.key, this.item});
+  final String? presetCabinetId; // Auto-select cabinet from BLE
+  
+  const AddEditItemScreen({
+    super.key,
+    this.item,
+    this.presetCabinetId,
+  });
 
   @override
   State<AddEditItemScreen> createState() => _AddEditItemScreenState();
@@ -28,19 +33,19 @@ class AddEditItemScreen extends StatefulWidget {
 class _AddEditItemScreenState extends State<AddEditItemScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _nameCtrl        = TextEditingController();
-  final _descCtrl        = TextEditingController();
-  final _brandCtrl       = TextEditingController();
-  final _qtyCtrl         = TextEditingController();
-  final _lowStockCtrl    = TextEditingController();
-  final _noteCtrl        = TextEditingController();
-  final _tagsCtrl        = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _brandCtrl = TextEditingController();
+  final _qtyCtrl = TextEditingController();
+  final _lowStockCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+  final _tagsCtrl = TextEditingController();
 
   String? _categoryId;
   String? _cabinetId;
   String? _boxId;
-  String  _unit   = 'pcs';
-  String  _status = 'inside';
+  String _unit = 'pcs';
+  String _status = 'inside';
 
   DateTime? _expiryDate;
   DateTime? _productionDate;
@@ -48,82 +53,86 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
   final List<String> _existingImageUrls = [];
   final List<File> _newImages = [];
 
-  bool _isAiLoading  = false;
-  bool _isSaving     = false;
+  bool _isAiLoading = false;
+  bool _isSaving = false;
   bool _isImgLoading = false;
 
+  // ── BLE Related ──
   bool _bleConnected = false;
   bool _autoMatchedDevice = false;
   bool _isLoadingLocation = true;
+  String? _connectedDeviceId;
   StreamSubscription<String>? _connectionSub;
+  
+  // ── Location State ──
+  bool _isLocationManuallyChanged = false;
 
   bool get _isEditing => widget.item != null;
 
-  static const _units    = ['pcs','box','bottle','pack','kg','g','L','ml'];
-  static const _statuses = ['inside','taken','used','damaged'];
+  static const _units = ['pcs', 'box', 'bottle', 'pack', 'kg', 'g', 'L', 'ml'];
+  static const _statuses = ['inside', 'taken', 'used', 'damaged'];
 
   @override
   void initState() {
     super.initState();
     if (_isEditing) {
       final i = widget.item!;
-      _nameCtrl.text     = i.name;
-      _descCtrl.text     = i.description ?? '';
-      _brandCtrl.text    = i.brand ?? '';
-      _qtyCtrl.text      = i.quantity.toString();
+      _nameCtrl.text = i.name;
+      _descCtrl.text = i.description ?? '';
+      _brandCtrl.text = i.brand ?? '';
+      _qtyCtrl.text = i.quantity.toString();
       _lowStockCtrl.text = i.lowStockThreshold.toString();
-      _noteCtrl.text     = i.note ?? '';
-      _tagsCtrl.text     = i.tags.join(', ');
+      _noteCtrl.text = i.note ?? '';
+      _tagsCtrl.text = i.tags.join(', ');
       _categoryId = i.categoryId;
-      _cabinetId  = i.cabinetId;
-      _boxId      = i.boxId;
-      _unit       = i.unit;
-      _status     = i.status;
-      _expiryDate     = i.expiryDate;
+      _cabinetId = i.cabinetId;
+      _boxId = i.boxId;
+      _unit = i.unit;
+      _status = i.status;
+      _expiryDate = i.expiryDate;
       _productionDate = i.productionDate;
       _existingImageUrls.addAll(i.imageUrls);
       _isLoadingLocation = false;
     } else {
-      _qtyCtrl.text      = '1';
+      _qtyCtrl.text = '1';
       _lowStockCtrl.text = '5';
-
-      // Load location on init
       _loadInitialLocation();
     }
 
     // Listen to BLE connection status
     _bleConnected = IoTService().isConnected;
+    _connectedDeviceId = IoTService().connectedDeviceId;
+    
     _connectionSub = IoTService().connectionStatus.listen((status) {
       if (!mounted) return;
       final wasConnected = _bleConnected;
-      setState(() => _bleConnected = status == 'Connected');
+      setState(() {
+        _bleConnected = status == 'Connected';
+        _connectedDeviceId = IoTService().connectedDeviceId;
+      });
 
       // If we just connected, reload location to auto-select cabinet
-      if (!wasConnected && _bleConnected) {
+      // BUT only if user hasn't manually changed the location
+      if (!wasConnected && _bleConnected && !_isLocationManuallyChanged) {
         _loadInitialLocation();
       }
     });
   }
 
-  // ── Load initial location (OPTIMIZED) ─────────────────
+  // ── Load Initial Location (BLE-integrated) ─────────────────
   Future<void> _loadInitialLocation() async {
     setState(() => _isLoadingLocation = true);
 
     try {
-      // Load categories (keep original)
+      // Load categories
       context.read<CategoryProvider>().loadCategories();
 
       final cabProvider = context.read<CabinetProvider>();
 
-      // ✅ OPTIMIZED: Check if data already loaded - use it immediately
-      bool hasData = cabProvider.cabinets.isNotEmpty && cabProvider.boxes.isNotEmpty;
-
-      if (!hasData) {
-        // Only force load if truly needed (maintains original logic)
-        await Future.wait([
-          cabProvider.forceLoadCabinets(),
-          cabProvider.forceLoadBoxes(),
-        ]);
+      // Ensure cabinets are loaded
+      if (cabProvider.cabinets.isEmpty) {
+        await cabProvider.forceLoadCabinets();
+        await cabProvider.forceLoadBoxes();
       }
 
       if (!mounted) return;
@@ -131,62 +140,116 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       debugPrint('📊 Cabinets loaded: ${cabProvider.cabinets.length}');
       debugPrint('📊 Boxes loaded: ${cabProvider.boxes.length}');
 
-      // If still empty, try one more time (maintains original retry logic)
-      if (cabProvider.cabinets.isEmpty) {
-        debugPrint('⚠️ Cabinets still empty, waiting a moment...');
-        await Future.delayed(const Duration(milliseconds: 500));
-
-        await cabProvider.forceLoadCabinets();
-        await cabProvider.forceLoadBoxes();
-
-        if (!mounted) return;
-        debugPrint('📊 After retry - Cabinets: ${cabProvider.cabinets.length}');
-      }
-
-      // Try to match by BLE device first (keeps original logic)
-      final connectedDeviceId = IoTService().connectedDeviceId;
-      CabinetModel? matched;
-      if (connectedDeviceId != null && cabProvider.cabinets.isNotEmpty) {
-        try {
-          matched = cabProvider.cabinets
-              .firstWhere((c) => c.bleDeviceId == connectedDeviceId);
-          debugPrint('🔵 Matched cabinet by BLE device: ${matched?.name}');
-        } catch (_) {
-          matched = null;
+      // ── STEP 0: Check for preset cabinet from BLE ──────────
+      if (widget.presetCabinetId != null) {
+        final cabinet = cabProvider.getCabinetById(widget.presetCabinetId!);
+        if (cabinet != null) {
+          setState(() {
+            _cabinetId = cabinet.id;
+            _autoMatchedDevice = true;
+            _isLocationManuallyChanged = false;
+          });
+          
+          // Auto-select first box in this cabinet
+          final boxes = cabProvider.getBoxesForCabinet(cabinet.id!);
+          if (boxes.isNotEmpty) {
+            setState(() {
+              _boxId = boxes.first.id;
+            });
+          }
+          debugPrint('✅ Preset cabinet from BLE: ${cabinet.name}');
+          setState(() => _isLoadingLocation = false);
+          return;
         }
       }
 
-      if (matched != null && mounted) {
-        setState(() {
-          _cabinetId = matched!.id;
-          _autoMatchedDevice = true;
-        });
-      } else {
-        // Fallback: last-used location (keeps original logic)
-        final rememberedCabinetId = await LocationMemoryService().getLastCabinetId();
-        final rememberedBoxId = await LocationMemoryService().getLastBoxId();
+      // ── STEP 1: Try BLE device matching ──────────────────
+      final connectedDeviceId = IoTService().connectedDeviceId;
+      
+      if (connectedDeviceId != null && cabProvider.cabinets.isNotEmpty) {
+        // Find cabinet linked to this BLE device
+        final matchedCabinets = cabProvider.cabinets
+            .where((c) => c.bleDeviceId == connectedDeviceId)
+            .toList();
+        
+        if (matchedCabinets.isNotEmpty) {
+          final matched = matchedCabinets.first;
+          debugPrint('🔵 Matched cabinet by BLE device: ${matched.name} (${matched.id})');
+          
+          setState(() {
+            _cabinetId = matched.id;
+            _autoMatchedDevice = true;
+            _isLocationManuallyChanged = false;
+          });
+          
+          // Auto-select first box in this cabinet
+          final boxes = cabProvider.getBoxesForCabinet(matched.id!);
+          if (boxes.isNotEmpty && !_isLocationManuallyChanged) {
+            setState(() {
+              _boxId = boxes.first.id;
+            });
+            debugPrint('📦 Auto-selected box: ${boxes.first.name}');
+          }
+          
+          setState(() => _isLoadingLocation = false);
+          return;
+        } else {
+          debugPrint('⚠️ No cabinet linked to BLE device: $connectedDeviceId');
+        }
+      }
 
-        debugPrint('📍 Remembered cabinet: $rememberedCabinetId');
-        debugPrint('📍 Remembered box: $rememberedBoxId');
+      // ── STEP 2: Try remembered location (last used) ─────
+      final rememberedCabinetId = await LocationMemoryService().getLastCabinetId();
+      final rememberedBoxId = await LocationMemoryService().getLastBoxId();
 
-        final cabinetStillExists = rememberedCabinetId != null &&
-            cabProvider.cabinets.any((c) => c.id == rememberedCabinetId);
-
-        if (cabinetStillExists && mounted) {
-          final boxStillExists = rememberedBoxId != null &&
-              cabProvider
-                  .getBoxesForCabinet(rememberedCabinetId)
-                  .any((b) => b.id == rememberedBoxId);
-
+      if (rememberedCabinetId != null) {
+        final cabinetStillExists = cabProvider.cabinets
+            .any((c) => c.id == rememberedCabinetId);
+        
+        if (cabinetStillExists && !_isLocationManuallyChanged) {
+          // Check if box still exists
+          String? validBoxId;
+          if (rememberedBoxId != null) {
+            final boxStillExists = cabProvider.boxes
+                .any((b) => b.id == rememberedBoxId && b.cabinetId == rememberedCabinetId);
+            if (boxStillExists) {
+              validBoxId = rememberedBoxId;
+            }
+          }
+          
           setState(() {
             _cabinetId = rememberedCabinetId;
-            _boxId = boxStillExists ? rememberedBoxId : null;
+            _boxId = validBoxId;
+            _autoMatchedDevice = false;
+            _isLocationManuallyChanged = false;
           });
-          debugPrint('✅ Restored remembered location');
-        } else {
-          debugPrint('ℹ️ No remembered location found or cabinet no longer exists');
+          debugPrint('✅ Restored remembered location: cabinet=$rememberedCabinetId, box=$validBoxId');
+          setState(() => _isLoadingLocation = false);
+          return;
         }
       }
+
+      // ── STEP 3: Fallback to first cabinet if available ──
+      if (cabProvider.cabinets.isNotEmpty && !_isLocationManuallyChanged) {
+        final firstCabinet = cabProvider.cabinets.first;
+        setState(() {
+          _cabinetId = firstCabinet.id;
+          _autoMatchedDevice = false;
+          _isLocationManuallyChanged = false;
+        });
+        
+        // Auto-select first box
+        final boxes = cabProvider.getBoxesForCabinet(firstCabinet.id!);
+        if (boxes.isNotEmpty) {
+          setState(() {
+            _boxId = boxes.first.id;
+          });
+        }
+        debugPrint('📍 Fallback to first cabinet: ${firstCabinet.name}');
+      } else {
+        debugPrint('ℹ️ No cabinets available');
+      }
+      
     } catch (e) {
       debugPrint('❌ Error loading location: $e');
     } finally {
@@ -196,9 +259,13 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
 
   @override
   void dispose() {
-    _nameCtrl.dispose(); _descCtrl.dispose(); _brandCtrl.dispose();
-    _qtyCtrl.dispose(); _lowStockCtrl.dispose();
-    _noteCtrl.dispose(); _tagsCtrl.dispose();
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    _brandCtrl.dispose();
+    _qtyCtrl.dispose();
+    _lowStockCtrl.dispose();
+    _noteCtrl.dispose();
+    _tagsCtrl.dispose();
     _connectionSub?.cancel();
     super.dispose();
   }
@@ -397,19 +464,19 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
 
   void _showAutoFillSheet(ItemAutoFill fill) {
     final catProvider = context.read<CategoryProvider>();
-    final matchedCat  = catProvider.getCategoryByName(fill.category);
+    final matchedCat = catProvider.getCategoryByName(fill.category);
 
     final sel = <String, bool>{
-      'name':        fill.name.isNotEmpty,
-      'brand':       fill.brand.isNotEmpty,
+      'name': fill.name.isNotEmpty,
+      'brand': fill.brand.isNotEmpty,
       'description': fill.description.isNotEmpty,
-      'category':    matchedCat != null,
-      'quantity':    fill.quantity > 0,
-      'unit':        true,
-      'expiry':      fill.expiryDate != null,
-      'production':  fill.productionDate != null,
-      'note':        fill.note.isNotEmpty,
-      'tags':        fill.tags.isNotEmpty,
+      'category': matchedCat != null,
+      'quantity': fill.quantity > 0,
+      'unit': true,
+      'expiry': fill.expiryDate != null,
+      'production': fill.productionDate != null,
+      'note': fill.note.isNotEmpty,
+      'tags': fill.tags.isNotEmpty,
     };
 
     showModalBottomSheet(
@@ -421,7 +488,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => StatefulBuilder(builder: (ctx, setLocal) {
         final textColor = Theme.of(ctx).colorScheme.onSurface;
-        final subColor  = textColor.withValues(alpha: 0.55);
+        final subColor = textColor.withValues(alpha: 0.55);
 
         return DraggableScrollableSheet(
           initialChildSize: 0.75,
@@ -438,7 +505,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                   decoration: BoxDecoration(
                     color: Colors.grey.shade400,
                     borderRadius: BorderRadius.circular(2)),
-                ),
+                  ),
               ),
               const SizedBox(height: 14),
               Row(children: [
@@ -601,19 +668,17 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     _showSnack('✅ AI fields applied! Review and save.');
   }
 
-  // ── ✅ FIXED: Upload images with better error handling ──
+  // ── Upload Images ──
   Future<List<String>> _uploadAllImages(String userId) async {
     final urls = <String>[..._existingImageUrls];
     
     for (final file in _newImages) {
       try {
-        // Generate a unique filename
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final fileName = 'item_photos/$userId/${timestamp}_${urls.length}.jpg';
         
         final ref = FirebaseStorage.instance.ref().child(fileName);
         
-        // Upload with metadata
         final metadata = SettableMetadata(
           contentType: 'image/jpeg',
           customMetadata: {
@@ -622,25 +687,21 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
           },
         );
         
-        // ✅ FIXED: Use putFile with metadata and better error handling
         await ref.putFile(file, metadata);
-        
-        // Get download URL
         final url = await ref.getDownloadURL();
         urls.add(url);
         
         debugPrint('✅ Uploaded image: $fileName');
       } catch (e) {
-        // Log error but continue with other images
         debugPrint('❌ Failed to upload image: $e');
-        // Don't rethrow - continue with other images
+        // Continue with other images
       }
     }
     
     return urls;
   }
 
-  // ── SAVE METHOD (FIXED) ──
+  // ── SAVE METHOD (FIXED - ensures item appears immediately) ──
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_categoryId == null) {
@@ -719,9 +780,9 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
           try {
             final uploadedUrls = await _uploadAllImages(userId);
             imageUrls = uploadedUrls;
+            debugPrint('✅ Uploaded ${uploadedUrls.length} images');
           } catch (e) {
             debugPrint('⚠️ Photo upload error: $e');
-            // Continue with existing images - don't fail the whole save
             _showSnack('⚠️ Some photos failed to upload');
           }
         }
@@ -729,27 +790,35 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
         // Create the final item with images
         final newItem = baseItem.copyWith(imageUrls: imageUrls);
         
-        // ✅ Use the optimistic add first for immediate UI feedback
-        itemProvider.addItemLocally(newItem);
+        // ✅ ADD OPTIMISTIC ITEM FIRST (immediate UI feedback)
+        final tempItem = itemProvider.addItemLocally(newItem);
+        debugPrint('📦 Added optimistic item: ${tempItem.id}');
         
-        // Then save to Firestore in background
+        // Save to Firestore
         final docId = await itemProvider.addItem(newItem);
         
         if (docId == null) {
           // Failed to save - remove the optimistic item
-          itemProvider.removeItemLocally(newItem.id!);
+          itemProvider.removeItemLocally(tempItem.id!);
           _showSnack('Error saving item');
           setState(() => _isSaving = false);
           return;
         }
         
-        // Remember location
+        // ✅ Replace local placeholder with real item
+        final realItem = newItem.copyWith(id: docId);
+        itemProvider.replaceLocalItem(tempItem.id!, realItem);
+        debugPrint('✅ Replaced local item with real ID: $docId');
+        
+        // Remember location for next time
         await LocationMemoryService().saveLocation(
           cabinetId: _cabinetId,
           boxId: _boxId,
         );
         
         if (mounted) {
+          // ✅ Force reload to ensure list is up to date
+          itemProvider.reloadItems();
           Navigator.pop(context, true);
           _showSnack('✅ Item added successfully');
         }
@@ -763,9 +832,9 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
           try {
             final uploadedUrls = await _uploadAllImages(userId);
             imageUrls = uploadedUrls;
+            debugPrint('✅ Uploaded ${uploadedUrls.length} images');
           } catch (e) {
             debugPrint('⚠️ Photo upload error: $e');
-            // Continue with existing images
             _showSnack('⚠️ Some photos failed to upload');
           }
         }
@@ -779,6 +848,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
             cabinetId: _cabinetId,
             boxId: _boxId,
           );
+          itemProvider.reloadItems();
           Navigator.pop(context, true);
           _showSnack('✅ Item updated successfully');
         } else if (mounted) {
@@ -885,8 +955,10 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
       _cabinetId = null;
       _boxId = null;
       _autoMatchedDevice = false;
+      _isLocationManuallyChanged = false;
     });
     _showSnack('Remembered location cleared');
+    _loadInitialLocation();
   }
 
   @override
@@ -895,7 +967,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     final cabProvider = context.watch<CabinetProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.55);
+    final subColor = textColor.withValues(alpha: 0.55);
 
     // Get boxes for the selected cabinet
     final boxes = _cabinetId != null
@@ -1201,10 +1273,10 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                       Expanded(
                         child: Text(
                           _autoMatchedDevice
-                              ? 'Location auto-filled from your connected smart cabinet.'
+                              ? '📍 Location auto-matched from connected smart cabinet'
                               : _bleConnected
-                                  ? 'Smart cabinet connected. Cabinet and box are optional — your last-used location is remembered automatically.'
-                                  : 'Cabinet and box are optional. Your last-used location is remembered automatically.',
+                                  ? '🔵 Smart cabinet connected. Location auto-matched automatically.'
+                                  : '📍 Location will be remembered for next time. Cabinet and box are optional.',
                           style: TextStyle(fontSize: 11, color: subColor),
                         ),
                       ),
@@ -1242,6 +1314,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                       _cabinetId = v;
                       _boxId = null;
                       _autoMatchedDevice = false;
+                      _isLocationManuallyChanged = true;
                     }),
                   ),
                   const SizedBox(height: 12),
@@ -1257,7 +1330,10 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                     ],
                     onChanged: _cabinetId == null
                         ? null
-                        : (v) => setState(() => _boxId = v),
+                        : (v) => setState(() {
+                            _boxId = v;
+                            _isLocationManuallyChanged = true;
+                          }),
                   ),
 
                   // ── QUANTITY ────────────────────────────────

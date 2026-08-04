@@ -5,7 +5,9 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import '../services/iot_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/item_provider.dart';
+import '../providers/cabinet_provider.dart';
 import '../widgets/loading_widget.dart';
+import 'add_edit_item_screen.dart'; // ✅ ADDED
 
 class SmartCabinetControlScreen extends StatefulWidget {
   const SmartCabinetControlScreen({super.key});
@@ -29,15 +31,51 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   bool _upperLedOn = false;
   bool _lowerLedOn = false;
 
+  // ✅ ADDED: Linked cabinet info
+  String? _linkedCabinetId;
+  String? _linkedCabinetName;
+
   @override
   void initState() {
     super.initState();
     _listenToIoTEvents();
+    _loadLinkedCabinet();
   }
 
   @override
   void dispose() {
     super.dispose();
+  }
+
+  // ✅ ADDED: Load linked cabinet when connected
+  Future<void> _loadLinkedCabinet() async {
+    final iotService = context.read<IoTService>();
+    final deviceId = iotService.connectedDeviceId;
+    
+    if (deviceId != null) {
+      final cabProvider = context.read<CabinetProvider>();
+      // Ensure cabinets are loaded
+      if (cabProvider.cabinets.isEmpty) {
+        await cabProvider.forceLoadCabinets();
+      }
+      
+      try {
+        final cabinet = cabProvider.cabinets.firstWhere(
+          (c) => c.bleDeviceId == deviceId,
+        );
+        setState(() {
+          _linkedCabinetId = cabinet.id;
+          _linkedCabinetName = cabinet.name;
+        });
+        debugPrint('🔗 Found linked cabinet: ${cabinet.name}');
+      } catch (_) {
+        setState(() {
+          _linkedCabinetId = null;
+          _linkedCabinetName = null;
+        });
+        debugPrint('⚠️ No cabinet linked to this device');
+      }
+    }
   }
 
   void _listenToIoTEvents() {
@@ -69,6 +107,9 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       setState(() => _connectionStatus = status);
 
       if (status == 'Connected') {
+        // ✅ When connected, check linked cabinet
+        _loadLinkedCabinet();
+        
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Connected to cabinet!'),
@@ -76,6 +117,10 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           ),
         );
       } else if (status == 'Disconnected') {
+        setState(() {
+          _linkedCabinetId = null;
+          _linkedCabinetName = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🔴 Disconnected from cabinet'),
@@ -141,6 +186,9 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     setState(() => _isConnecting = false);
 
     if (success) {
+      // ✅ Check linked cabinet after connection
+      await _loadLinkedCabinet();
+      
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Connected to ESP32!'),
@@ -166,6 +214,8 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       _lowerDoorOpen = false;
       _upperLedOn = false;
       _lowerLedOn = false;
+      _linkedCabinetId = null;
+      _linkedCabinetName = null;
     });
   }
 
@@ -196,10 +246,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     }
   }
 
-  // FIXED: previously both "Open Both" and "Close Both" called the same
-  // toggle logic, so "Close Both" could actually open a closed door
-  // instead of closing it. These now call the explicit open/close
-  // methods on IoTService so each button always does what it says.
   Future<void> _openBothDoors() async {
     final iotService = context.read<IoTService>();
     try {
@@ -244,6 +290,29 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     }
   }
 
+  // ── ✅ ADDED: Navigate to Add Item with auto-selected cabinet ──
+  void _goToAddItem() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddEditItemScreen(
+          presetCabinetId: _linkedCabinetId,
+        ),
+      ),
+    );
+  }
+
+  // ── ✅ ADDED: Navigate to Cabinet Detail ──
+  void _goToCabinetDetail() {
+    if (_linkedCabinetId != null) {
+      Navigator.pushNamed(
+        context,
+        '/cabinet-detail',
+        arguments: _linkedCabinetId,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final iotService = context.watch<IoTService>();
@@ -272,6 +341,12 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             // ── Connection Status ──────────────────────────
             _buildConnectionStatus(isConnected, textColor, subColor),
 
+            const SizedBox(height: 16),
+
+            // ── ✅ ADDED: Linked Cabinet Info ─────────────
+            if (isConnected && _linkedCabinetId != null)
+              _buildLinkedCabinetInfo(textColor, subColor, isDark),
+
             const SizedBox(height: 20),
 
             // ── Scan / Connect Section ─────────────────────
@@ -282,6 +357,12 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             if (isConnected) ...[
               const SizedBox(height: 16),
               _buildControlSection(textColor, subColor, isDark),
+            ],
+
+            // ── ✅ ADDED: Quick Actions ────────────────────
+            if (isConnected) ...[
+              const SizedBox(height: 20),
+              _buildQuickActions(textColor, isDark),
             ],
 
             // ── Items in Cabinet ──────────────────────────
@@ -333,6 +414,159 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             ),
             if (isConnected)
               const Icon(Icons.bluetooth_connected, color: Colors.blue),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── ✅ ADDED: Linked Cabinet Info Widget ──
+  Widget _buildLinkedCabinetInfo(Color textColor, Color subColor, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4ECDC4).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF4ECDC4).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.link, color: Color(0xFF4ECDC4), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Linked Cabinet',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: subColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  _linkedCabinetName ?? 'Unknown Cabinet',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, color: Color(0xFF4ECDC4)),
+            onPressed: _goToCabinetDetail,
+            tooltip: 'View Cabinet',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── ✅ ADDED: Quick Actions Widget ──
+  Widget _buildQuickActions(Color textColor, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Quick Actions',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: textColor,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _actionCard(
+                icon: Icons.add_box_outlined,
+                label: 'Add Item',
+                description: _linkedCabinetName != null
+                    ? 'To ${_linkedCabinetName!}'
+                    : 'To cabinet',
+                color: const Color(0xFF4ECDC4),
+                onTap: _goToAddItem,
+                isDark: isDark,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _actionCard(
+                icon: Icons.inventory_2_outlined,
+                label: 'View Items',
+                description: 'In this cabinet',
+                color: const Color(0xFF45B7D1),
+                onTap: _goToCabinetDetail,
+                isDark: isDark,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ── ✅ ADDED: Action Card Widget ──
+  Widget _actionCard({
+    required IconData icon,
+    required String label,
+    required String description,
+    required Color color,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF2D2D2D) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            Text(
+              description,
+              style: TextStyle(
+                fontSize: 10,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
           ],
         ),
       ),
@@ -464,9 +698,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
         const SizedBox(height: 12),
 
         // ── Both Doors ─────────────────────────────────────
-        // FIXED: now call the explicit open/close methods instead of
-        // both calling _toggleDoor (which made "Close Both" behave the
-        // same as "Open Both" and could open an already-closed door).
         Row(
           children: [
             Expanded(
