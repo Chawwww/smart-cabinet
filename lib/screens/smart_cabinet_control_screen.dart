@@ -2,12 +2,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../services/iot_service.dart';
 import '../providers/auth_provider.dart';
 import '../providers/item_provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../widgets/loading_widget.dart';
-import 'add_edit_item_screen.dart'; // ✅ ADDED
+import 'add_edit_item_screen.dart';
 
 class SmartCabinetControlScreen extends StatefulWidget {
   const SmartCabinetControlScreen({super.key});
@@ -31,7 +32,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   bool _upperLedOn = false;
   bool _lowerLedOn = false;
 
-  // ✅ ADDED: Linked cabinet info
+  // Linked cabinet info
   String? _linkedCabinetId;
   String? _linkedCabinetName;
 
@@ -47,14 +48,59 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     super.dispose();
   }
 
-  // ✅ ADDED: Load linked cabinet when connected
+  // ── Permission Check ──────────────────────────────
+  Future<bool> _checkPermissions() async {
+    // Check location permission
+    final status = await Permission.locationWhenInUse.status;
+    
+    if (status.isGranted) {
+      // Also check Bluetooth permissions for Android 12+
+      if (await _checkBluetoothPermissions()) {
+        return true;
+      }
+      return false;
+    }
+    
+    if (status.isDenied) {
+      final result = await Permission.locationWhenInUse.request();
+      if (result.isGranted) {
+        return await _checkBluetoothPermissions();
+      }
+      return false;
+    }
+    
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+      return false;
+    }
+    
+    return false;
+  }
+
+  Future<bool> _checkBluetoothPermissions() async {
+    final bluetoothScan = await Permission.bluetoothScan.status;
+    final bluetoothConnect = await Permission.bluetoothConnect.status;
+    
+    if (!bluetoothScan.isGranted) {
+      final result = await Permission.bluetoothScan.request();
+      if (!result.isGranted) return false;
+    }
+    
+    if (!bluetoothConnect.isGranted) {
+      final result = await Permission.bluetoothConnect.request();
+      if (!result.isGranted) return false;
+    }
+    
+    return true;
+  }
+
+  // ── Load linked cabinet ────────────────────────────
   Future<void> _loadLinkedCabinet() async {
     final iotService = context.read<IoTService>();
     final deviceId = iotService.connectedDeviceId;
     
     if (deviceId != null) {
       final cabProvider = context.read<CabinetProvider>();
-      // Ensure cabinets are loaded
       if (cabProvider.cabinets.isEmpty) {
         await cabProvider.forceLoadCabinets();
       }
@@ -81,7 +127,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   void _listenToIoTEvents() {
     final iotService = context.read<IoTService>();
 
-    // Listen to door events
     iotService.doorEvents.listen((event) {
       final door = event['door'] as String? ?? '';
       final isOpen = event['isOpen'] as bool? ?? false;
@@ -94,7 +139,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
         }
       });
 
-      // Show notification when door state changes
       if (door == 'upper') {
         _showDoorNotification('Upper Door', isOpen);
       } else if (door == 'lower') {
@@ -102,14 +146,11 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       }
     });
 
-    // Listen to connection status
     iotService.connectionStatus.listen((status) {
       setState(() => _connectionStatus = status);
 
       if (status == 'Connected') {
-        // ✅ When connected, check linked cabinet
         _loadLinkedCabinet();
-        
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Connected to cabinet!'),
@@ -145,35 +186,81 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     );
   }
 
+  // ── Scan ──────────────────────────────────────────
   Future<void> _startScan() async {
+    // ✅ Check permissions first
+    final hasPermission = await _checkPermissions();
+    if (!hasPermission) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '⚠️ Location and Bluetooth permissions are required for BLE scanning.\n'
+            'Please grant permissions in settings.',
+          ),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isScanning = true;
       _devices.clear();
+      _connectionStatus = 'Scanning...';
     });
 
     final iotService = context.read<IoTService>();
 
-    // Start scanning
-    await iotService.startScan();
+    try {
+      await iotService.startScan();
+      await Future.delayed(const Duration(seconds: 10));
 
-    // Listen for discovered devices
-    await Future.delayed(const Duration(seconds: 5));
+      setState(() {
+        _devices = List.from(iotService.discoveredDevices);
+        _isScanning = false;
+        _connectionStatus = _devices.isEmpty ? 'No devices found' : 'Devices found';
+      });
 
-    setState(() {
-      _devices = iotService.discoveredDevices;
-      _isScanning = false;
-    });
-
-    if (_devices.isEmpty) {
+      if (_devices.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No devices found.\n\n'
+              'Make sure:\n'
+              '1. ESP32 is powered on (LED blinking)\n'
+              '2. Bluetooth is enabled on your phone\n'
+              '3. ESP32 is in range (within 10 meters)\n'
+              '4. ESP32 firmware is running',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 6),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Found ${_devices.length} device(s)! Tap Connect.'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isScanning = false;
+        _connectionStatus = 'Error: $e';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No devices found. Make sure ESP32 is powered on.'),
-          backgroundColor: Colors.orange,
+        SnackBar(
+          content: Text('Scan error: $e'),
+          backgroundColor: Colors.red,
         ),
       );
     }
   }
 
+  // ── Connect ────────────────────────────────────────
   Future<void> _connectToDevice(String deviceId) async {
     setState(() {
       _isConnecting = true;
@@ -186,9 +273,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     setState(() => _isConnecting = false);
 
     if (success) {
-      // ✅ Check linked cabinet after connection
       await _loadLinkedCabinet();
-      
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Connected to ESP32!'),
@@ -219,6 +304,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     });
   }
 
+  // ── Door Controls ─────────────────────────────────
   Future<void> _toggleDoor(String door) async {
     final iotService = context.read<IoTService>();
 
@@ -290,7 +376,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     }
   }
 
-  // ── ✅ ADDED: Navigate to Add Item with auto-selected cabinet ──
+  // ── Navigation ────────────────────────────────────
   void _goToAddItem() {
     Navigator.push(
       context,
@@ -302,7 +388,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     );
   }
 
-  // ── ✅ ADDED: Navigate to Cabinet Detail ──
   void _goToCabinetDetail() {
     if (_linkedCabinetId != null) {
       Navigator.pushNamed(
@@ -313,6 +398,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     }
   }
 
+  // ── Build ──────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final iotService = context.watch<IoTService>();
@@ -338,34 +424,27 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Connection Status ──────────────────────────
             _buildConnectionStatus(isConnected, textColor, subColor),
-
             const SizedBox(height: 16),
 
-            // ── ✅ ADDED: Linked Cabinet Info ─────────────
             if (isConnected && _linkedCabinetId != null)
               _buildLinkedCabinetInfo(textColor, subColor, isDark),
 
             const SizedBox(height: 20),
 
-            // ── Scan / Connect Section ─────────────────────
             if (!isConnected)
               _buildScanSection(textColor, subColor),
 
-            // ── Control Section ────────────────────────────
             if (isConnected) ...[
               const SizedBox(height: 16),
               _buildControlSection(textColor, subColor, isDark),
             ],
 
-            // ── ✅ ADDED: Quick Actions ────────────────────
             if (isConnected) ...[
               const SizedBox(height: 20),
               _buildQuickActions(textColor, isDark),
             ],
 
-            // ── Items in Cabinet ──────────────────────────
             if (isConnected) ...[
               const SizedBox(height: 24),
               _buildItemsSection(),
@@ -378,6 +457,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     );
   }
 
+  // ── Widget Builders ────────────────────────────────
   Widget _buildConnectionStatus(bool isConnected, Color textColor, Color subColor) {
     return Card(
       child: Padding(
@@ -420,7 +500,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     );
   }
 
-  // ── ✅ ADDED: Linked Cabinet Info Widget ──
   Widget _buildLinkedCabinetInfo(Color textColor, Color subColor, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -468,7 +547,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     );
   }
 
-  // ── ✅ ADDED: Quick Actions Widget ──
   Widget _buildQuickActions(Color textColor, bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -513,7 +591,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     );
   }
 
-  // ── ✅ ADDED: Action Card Widget ──
   Widget _actionCard({
     required IconData icon,
     required String label,
@@ -577,6 +654,48 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_connectionStatus != 'Disconnected' && _connectionStatus != 'Connected')
+          Container(
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: _connectionStatus.contains('error') 
+                  ? Colors.red.withValues(alpha: 0.1)
+                  : Colors.blue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _connectionStatus.contains('error')
+                    ? Colors.red.withValues(alpha: 0.3)
+                    : Colors.blue.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _connectionStatus.contains('error') 
+                      ? Icons.error_outline 
+                      : Icons.info_outline,
+                  color: _connectionStatus.contains('error') 
+                      ? Colors.red 
+                      : Colors.blue,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _connectionStatus,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _connectionStatus.contains('error')
+                          ? Colors.red
+                          : textColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
         Row(
           children: [
             Expanded(
@@ -598,6 +717,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           ],
         ),
         const SizedBox(height: 12),
+        
         if (_devices.isNotEmpty)
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -640,14 +760,35 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
               )).toList(),
             ],
           ),
-        if (_devices.isEmpty && !_isScanning)
+        
+        if (_devices.isEmpty && !_isScanning && _connectionStatus != 'Scanning...')
           Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Text(
-                'No devices found.\nTap "Scan for Devices" to search.\nMake sure ESP32 is powered on and in range.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: subColor),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.bluetooth_disabled,
+                    size: 60,
+                    color: subColor.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No devices found.',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap "Scan for Devices" to search.\n'
+                    'Make sure ESP32 is powered on and in range.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: subColor),
+                  ),
+                ],
               ),
             ),
           ),
@@ -669,7 +810,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
         ),
         const SizedBox(height: 12),
 
-        // ── Upper Door ─────────────────────────────────────
         _buildDoorControl(
           title: 'Upper Door',
           icon: Icons.arrow_upward,
@@ -683,7 +823,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
 
         const SizedBox(height: 12),
 
-        // ── Lower Door ─────────────────────────────────────
         _buildDoorControl(
           title: 'Lower Door',
           icon: Icons.arrow_downward,
@@ -697,7 +836,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
 
         const SizedBox(height: 12),
 
-        // ── Both Doors ─────────────────────────────────────
         Row(
           children: [
             Expanded(
@@ -728,7 +866,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
 
         const SizedBox(height: 12),
 
-        // ── LED Control ────────────────────────────────────
         Row(
           children: [
             Expanded(
@@ -831,7 +968,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     final itemProvider = context.watch<ItemProvider>();
     final items = itemProvider.items;
 
-    // Filter items that have cabinetId matching current cabinet
     final cabinetItems = items.where((item) =>
       item.cabinetId != null && item.cabinetId!.isNotEmpty
     ).toList();

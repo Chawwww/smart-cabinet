@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
+import 'package:file_picker/file_picker.dart';
 
 class FileUtils {
   // ── Get Temporary Directory ──
@@ -81,7 +82,8 @@ class FileUtils {
   static String formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
@@ -203,8 +205,8 @@ class FileUtils {
     List<String>? allowedExtensions,
   }) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FilePickerType.custom,
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
         allowedExtensions: allowedExtensions,
       );
       if (result == null || result.files.isEmpty) return null;
@@ -218,7 +220,8 @@ class FileUtils {
   }
 
   // ── Pick Image ──
-  static Future<File?> pickImage({ImageSource source = ImageSource.gallery}) async {
+  static Future<File?> pickImage(
+      {ImageSource source = ImageSource.gallery}) async {
     try {
       final picker = ImagePicker();
       final XFile? image = await picker.pickImage(

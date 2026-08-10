@@ -8,15 +8,17 @@ import 'package:image_picker/image_picker.dart';
 import '../models/item_model.dart';
 import '../providers/item_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/cabinet_provider.dart';
 import '../services/ai_service.dart';
+import '../services/iot_service.dart';
 import 'add_edit_item_screen.dart';
 import 'medicine_info_screen.dart';
 
 class ItemDetailScreen extends StatefulWidget {
   final ItemModel? item;
-  
+
   const ItemDetailScreen({super.key, this.item});
-  
+
   // Factory constructor for non-null items
   const ItemDetailScreen.withItem({super.key, required ItemModel item})
       : item = item;
@@ -33,6 +35,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   int _photoIndex = 0;
   bool _isSaving = false;
   bool _isAiCounting = false;
+  bool _isCabinetAction = false;
+  bool _itemLightOn = false;
   bool _isInitialized = false;
 
   final _fmt = DateFormat('dd MMM yyyy');
@@ -41,7 +45,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   @override
   void initState() {
     super.initState();
-    
+
     // Handle case where item is null
     if (widget.item == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -53,11 +57,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             ),
           );
           Navigator.pop(context);
-  }
+        }
       });
       return;
     }
-    
+
     _item = widget.item!;
     _tabs = TabController(length: 3, vsync: this);
     _isInitialized = true;
@@ -76,14 +80,14 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   // ════════════════════════════════════════════
   Future<void> _showWithdrawDialog() async {
     if (!_isInitialized) return;
-    
+
     // SUPERVISOR REQ 3: Block expired items from being taken
     if (_item.isExpired) {
       _showBlockedDialog(
         '🚫 Cannot Take Out — Item Expired',
         '${_item.name} expired on ${_fmt.format(_item.expiryDate!)}.\n\n'
-        'Expired items must not be used. '
-        'Please remove or discard this item.',
+            'Expired items must not be used. '
+            'Please remove or discard this item.',
       );
       return;
     }
@@ -109,21 +113,23 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         return Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            left: 20, right: 20, top: 16,
+            left: 20,
+            right: 20,
+            top: 16,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(2)),
+                    color: Colors.grey.shade400,
+                    borderRadius: BorderRadius.circular(2)),
               ),
               const SizedBox(height: 16),
               Row(children: [
-                Text(_item.icon ?? '📦',
-                    style: const TextStyle(fontSize: 28)),
+                Text(_item.icon ?? '📦', style: const TextStyle(fontSize: 28)),
                 const SizedBox(width: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,9 +140,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                             fontWeight: FontWeight.bold,
                             color: textColor)),
                     Text(_item.name,
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: subColor)),
+                        style: TextStyle(fontSize: 13, color: subColor)),
                   ],
                 ),
               ]),
@@ -154,8 +158,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                   icon: const Icon(Icons.remove_circle_outline),
                   color: Colors.red,
                   iconSize: 32,
-                  onPressed:
-                      qty > 1 ? () => setLocal(() => qty--) : null,
+                  onPressed: qty > 1 ? () => setLocal(() => qty--) : null,
                 ),
                 Expanded(
                   child: Column(children: [
@@ -167,17 +170,15 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                             color: textColor)),
                     Text(_item.unit,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                            fontSize: 12, color: subColor)),
+                        style: TextStyle(fontSize: 12, color: subColor)),
                   ]),
                 ),
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline),
                   color: const Color(0xFF4ECDC4),
                   iconSize: 32,
-                  onPressed: qty < _item.quantity
-                      ? () => setLocal(() => qty++)
-                      : null,
+                  onPressed:
+                      qty < _item.quantity ? () => setLocal(() => qty++) : null,
                 ),
               ]),
               Text(
@@ -202,8 +203,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () {
+                  onPressed: () async {
                     Navigator.pop(ctx);
+                    await _openItemLocation(showSuccess: false);
                     _doWithdraw(qty, noteCtrl.text.trim());
                   },
                   icon: const Icon(Icons.arrow_circle_down),
@@ -217,27 +219,27 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 ),
               ),
               const SizedBox(height: 20),
-        ],
-      ),
-    );
+            ],
+          ),
+        );
       }),
     );
   }
 
   Future<void> _doWithdraw(int qty, String note) async {
     if (!_isInitialized) return;
-    
+
     final authProvider = context.read<AuthProvider>();
     final takenBy = authProvider.currentUser?.name ?? 'Unknown';
 
     setState(() => _isSaving = true);
 
     final ok = await context.read<ItemProvider>().recordWithdrawal(
-      item: _item,
-      qty: qty,
-      takenBy: takenBy,
-      note: note.isEmpty ? null : note,
-    );
+          item: _item,
+          qty: qty,
+          takenBy: takenBy,
+          note: note.isEmpty ? null : note,
+        );
 
     if (ok && mounted) {
       // Refresh local state from provider
@@ -262,7 +264,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   // ════════════════════════════════════════════
   Future<void> _aiCountFromPhoto() async {
     if (!_isInitialized) return;
-    
+
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: Theme.of(context).cardTheme.color ??
@@ -276,25 +278,29 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text('AI Count Items',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               Text(
                 'Take a photo of the cabinet shelf. '
                 'AI will count how many "${_item.name}" are visible.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 13, color: Color(0xFF636E72)),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF636E72)),
               ),
               const SizedBox(height: 16),
               Row(children: [
-                Expanded(child: _photoBtn(Icons.camera_alt, 'Camera',
-                    const Color(0xFF4ECDC4),
-                    () => Navigator.pop(context, ImageSource.camera))),
+                Expanded(
+                    child: _photoBtn(
+                        Icons.camera_alt,
+                        'Camera',
+                        const Color(0xFF4ECDC4),
+                        () => Navigator.pop(context, ImageSource.camera))),
                 const SizedBox(width: 12),
-                Expanded(child: _photoBtn(Icons.photo_library, 'Gallery',
-                    const Color(0xFF45B7D1),
-                    () => Navigator.pop(context, ImageSource.gallery))),
+                Expanded(
+                    child: _photoBtn(
+                        Icons.photo_library,
+                        'Gallery',
+                        const Color(0xFF45B7D1),
+                        () => Navigator.pop(context, ImageSource.gallery))),
               ]),
               const SizedBox(height: 8),
             ],
@@ -305,22 +311,22 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
 
     if (source == null) return;
 
-    final picked = await ImagePicker().pickImage(
-        source: source, imageQuality: 80, maxWidth: 1280);
+    final picked = await ImagePicker()
+        .pickImage(source: source, imageQuality: 80, maxWidth: 1280);
     if (picked == null) return;
 
     setState(() => _isAiCounting = true);
     try {
-      final result = await AIService()
-          .countItemsFromPhoto(File(picked.path), _item.name);
+      final result =
+          await AIService().countItemsFromPhoto(File(picked.path), _item.name);
       if (!mounted) return;
       _showAiCountResult(result);
-      } catch (e) {
+    } catch (e) {
       if (mounted) _showSnack('AI count failed: $e');
-      } finally {
+    } finally {
       if (mounted) setState(() => _isAiCounting = false);
-      }
     }
+  }
 
   void _showAiCountResult(AiCountResult result) {
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -329,8 +335,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(children: [
           Icon(Icons.auto_awesome, color: Color(0xFF4ECDC4)),
           SizedBox(width: 8),
@@ -389,8 +394,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               decoration: BoxDecoration(
                 color: Colors.orange.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: Colors.orange.withValues(alpha: 0.3)),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
               ),
               child: Text(
                 '⚠️ System Limitation: AI counting accuracy '
@@ -425,7 +429,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
 
   Future<void> _applyAiCount(int count) async {
     if (!_isInitialized) return;
-    
+
     final now = DateTime.now();
     final updated = _item.copyWith(
       quantity: count,
@@ -441,7 +445,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
 
   Future<void> _returnItem() async {
     if (!_isInitialized) return;
-    
+
     setState(() => _isSaving = true);
     final now = DateTime.now();
     final updated = _item.copyWith(
@@ -457,24 +461,23 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
 
   Future<void> _toggleFavourite() async {
     if (!_isInitialized) return;
-    
-      final updated = _item.copyWith(
-        isFavorite: !_item.isFavorite,
-        updatedAt: DateTime.now(),
-      );
+
+    final updated = _item.copyWith(
+      isFavorite: !_item.isFavorite,
+      updatedAt: DateTime.now(),
+    );
     setState(() => _item = updated);
-      await context.read<ItemProvider>().updateItem(updated);
+    await context.read<ItemProvider>().updateItem(updated);
   }
 
   Future<void> _delete() async {
     if (!_isInitialized) return;
-    
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Item'),
-        content:
-            Text('Delete "${_item.name}"? This cannot be undone.'),
+        content: Text('Delete "${_item.name}"? This cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -496,21 +499,17 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(children: [
-          const Icon(Icons.warning_amber_rounded,
-              color: Colors.red, size: 22),
+          const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
           const SizedBox(width: 8),
-          Expanded(child: Text(title,
-              style: const TextStyle(fontSize: 15))),
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 15))),
         ]),
         content: Text(msg),
         actions: [
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Understood'),
           ),
         ],
@@ -527,11 +526,175 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   }
 
   void _showSnack(String msg) =>
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
-  Widget _photoBtn(IconData icon, String label, Color color,
-      VoidCallback onTap) =>
+  /// Direct item assignment takes precedence over a box's default door.
+  CabinetDoor? _itemDoor() {
+    final directDoor = cabinetDoorFromId(_item.doorId);
+    if (directDoor != null) return directDoor;
+
+    final boxId = _item.boxId;
+    if (boxId == null || _item.cabinetId == null) return null;
+
+    final box = context.read<CabinetProvider>().getBoxById(boxId);
+    if (box == null || box.cabinetId != _item.cabinetId) return null;
+    return cabinetDoorFromId(box.doorId);
+  }
+
+  String? _itemDoorLabel() {
+    final door = _itemDoor();
+    return door?.label;
+  }
+
+  bool _isAssignedCabinetConnected() {
+    final cabinetId = _item.cabinetId;
+    if (cabinetId == null) return false;
+    final cabinet = context.read<CabinetProvider>().getCabinetById(cabinetId);
+    final connectedDeviceId = context.read<IoTService>().connectedDeviceId;
+    if (connectedDeviceId == null) return false;
+    // New cabinets may not yet have their BLE ID saved. In that case, use the
+    // active ESP32 connection; once linked, only the matching device may act.
+    return cabinet?.bleDeviceId == null ||
+        cabinet?.bleDeviceId == connectedDeviceId;
+  }
+
+  Future<void> _openItemLocation({bool showSuccess = true}) async {
+    final door = _itemDoor();
+    if (door == null) {
+      if (showSuccess) {
+        _showSnack('Edit this item and select Upper or Lower Door first.');
+      }
+      return;
+    }
+    if (!_isAssignedCabinetConnected()) {
+      _showSnack('Connect to this item\'s linked smart cabinet first.');
+      return;
+    }
+
+    setState(() => _isCabinetAction = true);
+    try {
+      final iot = context.read<IoTService>();
+      await iot.sendLEDCommand(door, true);
+      await iot.openDoor(door);
+      if (mounted) {
+        setState(() => _itemLightOn = true);
+        if (showSuccess)
+          _showSnack('${door.label} opened and light turned on.');
+      }
+    } catch (error) {
+      if (mounted) _showSnack('Cabinet control failed: $error');
+    } finally {
+      if (mounted) setState(() => _isCabinetAction = false);
+    }
+  }
+
+  Future<void> _toggleItemLight() async {
+    final door = _itemDoor();
+    if (door == null) {
+      _showSnack('Edit this item and select Upper or Lower Door first.');
+      return;
+    }
+    if (!_isAssignedCabinetConnected()) {
+      _showSnack('Connect to this item\'s linked smart cabinet first.');
+      return;
+    }
+
+    setState(() => _isCabinetAction = true);
+    try {
+      final nextLightState = !_itemLightOn;
+      await context.read<IoTService>().sendLEDCommand(door, nextLightState);
+      if (mounted) {
+        setState(() => _itemLightOn = nextLightState);
+        _showSnack('${door.label} light ${nextLightState ? 'on' : 'off'}.');
+      }
+    } catch (error) {
+      if (mounted) _showSnack('Light control failed: $error');
+    } finally {
+      if (mounted) setState(() => _isCabinetAction = false);
+    }
+  }
+
+  Widget _buildCabinetControlCard(Color textColor, Color subColor) {
+    final doorLabel = _itemDoorLabel();
+    if (doorLabel == null) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.grey.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(children: [
+          Icon(Icons.location_off_outlined, color: subColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'No smart-door location assigned. Edit this item and select Upper or Lower Door.',
+              style: TextStyle(fontSize: 12, color: subColor),
+            ),
+          ),
+        ]),
+      );
+    }
+
+    final connected = _isAssignedCabinetConnected();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4ECDC4).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border:
+            Border.all(color: const Color(0xFF4ECDC4).withValues(alpha: 0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.bluetooth_connected, color: Color(0xFF4ECDC4)),
+          const SizedBox(width: 8),
+          Text('Smart cabinet · $doorLabel',
+              style: TextStyle(fontWeight: FontWeight.w700, color: textColor)),
+          const Spacer(),
+          Icon(connected ? Icons.circle : Icons.circle_outlined,
+              size: 12, color: connected ? Colors.green : Colors.orange),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          connected
+              ? 'Connected to this cabinet. Controls are live.'
+              : 'Connect the ESP32 linked to this cabinet to enable controls.',
+          style: TextStyle(fontSize: 12, color: subColor),
+        ),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _isCabinetAction || !connected
+                  ? null
+                  : () => _openItemLocation(),
+              icon: _isCabinetAction
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.lock_open_outlined),
+              label: const Text('Open door'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed:
+                  _isCabinetAction || !connected ? null : _toggleItemLight,
+              icon: Icon(
+                  _itemLightOn ? Icons.lightbulb : Icons.lightbulb_outline),
+              label: Text(_itemLightOn ? 'Light off' : 'Light on'),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _photoBtn(
+          IconData icon, String label, Color color, VoidCallback onTap) =>
       GestureDetector(
         onTap: onTap,
         child: Container(
@@ -545,8 +708,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             Icon(icon, color: color, size: 26),
             const SizedBox(height: 6),
             Text(label,
-                style: TextStyle(
-                    color: color, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: color, fontWeight: FontWeight.w600)),
           ]),
         ),
       );
@@ -554,24 +716,45 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   // ── Check if item is medicine ──────────────────────────
   bool _isMedicine() {
     if (!_isInitialized) return false;
-    
+
     // Check category
     if (_item.categoryId.toLowerCase().contains('med')) return true;
-    
+
     // Check tags
-    final medicineTags = ['medicine', 'drug', 'tablet', 'capsule', 
-        'syrup', '药', '药物', 'pharmacy', 'pill', 'medication'];
-    if (_item.tags.any((t) => 
-        medicineTags.any((tag) => t.toLowerCase().contains(tag)))) {
+    final medicineTags = [
+      'medicine',
+      'drug',
+      'tablet',
+      'capsule',
+      'syrup',
+      '药',
+      '药物',
+      'pharmacy',
+      'pill',
+      'medication'
+    ];
+    if (_item.tags
+        .any((t) => medicineTags.any((tag) => t.toLowerCase().contains(tag)))) {
       return true;
     }
-    
+
     // Check name
-    final medicineNames = ['tablet', 'capsule', 'syrup', 'mg', 'ml', 
-        '药', '药物', 'med', 'pill', 'ointment', 'cream'];
+    final medicineNames = [
+      'tablet',
+      'capsule',
+      'syrup',
+      'mg',
+      'ml',
+      '药',
+      '药物',
+      'med',
+      'pill',
+      'ointment',
+      'cream'
+    ];
     final lowerName = _item.name.toLowerCase();
     if (medicineNames.any((n) => lowerName.contains(n))) return true;
-    
+
     return false;
   }
 
@@ -590,7 +773,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         ),
       );
     }
-    
+
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = textColor.withValues(alpha: 0.55);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -607,8 +790,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(_item.name,
-            style: TextStyle(
-                fontWeight: FontWeight.w600, color: textColor),
+            style: TextStyle(fontWeight: FontWeight.w600, color: textColor),
             overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
@@ -619,18 +801,16 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             onPressed: _toggleFavourite,
           ),
           IconButton(
-            icon: const Icon(Icons.edit_outlined,
-                color: Color(0xFF4ECDC4)),
+            icon: const Icon(Icons.edit_outlined, color: Color(0xFF4ECDC4)),
             onPressed: () async {
               final result = await Navigator.push(
-              context,
-              MaterialPageRoute(
+                context,
+                MaterialPageRoute(
                     builder: (_) => AddEditItemScreen(item: _item)),
               );
               if (result == true && mounted) {
-                final updated = context
-                    .read<ItemProvider>()
-                    .getItemById(_item.id!);
+                final updated =
+                    context.read<ItemProvider>().getItemById(_item.id!);
                 if (updated != null) setState(() => _item = updated);
               }
             },
@@ -646,16 +826,19 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         ],
       ),
       body: Column(
-                children: [
+        children: [
           // SUPERVISOR REQ 5: Photo(s) displayed directly, swipeable
           _buildHeroImage(accent, isDark),
 
           // Expiry warning banner
           if (_item.isExpired)
-            _banner('🚫 EXPIRED — ${_fmt.format(_item.expiryDate!)}  '
-                'Do not use or take out.', Colors.red),
+            _banner(
+                '🚫 EXPIRED — ${_fmt.format(_item.expiryDate!)}  '
+                'Do not use or take out.',
+                Colors.red),
           if (_item.isExpiringSoon && !_item.isExpired)
-            _banner('⚠️ Expiring Soon — ${_item.daysLeftText}  '
+            _banner(
+                '⚠️ Expiring Soon — ${_item.daysLeftText}  '
                 'Consume or restock before '
                 '${_fmt.format(_item.expiryDate!)}.',
                 Colors.orange),
@@ -669,8 +852,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             labelColor: const Color(0xFF4ECDC4),
             unselectedLabelColor: subColor,
             indicatorColor: const Color(0xFF4ECDC4),
-            labelStyle: const TextStyle(
-                fontWeight: FontWeight.w600, fontSize: 12),
+            labelStyle:
+                const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
             tabs: const [
               Tab(text: 'Details'),
               Tab(text: 'Quantity'),
@@ -686,11 +869,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 _buildQuantity(textColor, subColor, isDark),
                 _buildHistory(textColor, subColor),
               ],
-                                ),
-                              ),
+            ),
+          ),
         ],
-                            ),
-                          );
+      ),
+    );
   }
 
   // ── Hero image / photo carousel ─────────────────────────
@@ -700,16 +883,16 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     if (images.isEmpty) {
       return Container(
         height: 180,
-                      width: double.infinity,
+        width: double.infinity,
         color: accent.withValues(alpha: isDark ? 0.15 : 0.08),
-                      child: Center(
-            child: Text(_item.icon ?? '📦',
-                style: const TextStyle(fontSize: 72))),
+        child: Center(
+            child:
+                Text(_item.icon ?? '📦', style: const TextStyle(fontSize: 72))),
       );
     }
 
     return Stack(
-                    children: [
+      children: [
         Container(
           height: 180,
           width: double.infinity,
@@ -724,9 +907,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               errorBuilder: (_, __, ___) => Center(
                   child: Text(_item.icon ?? '📦',
                       style: const TextStyle(fontSize: 72))),
-                        ),
-                      ),
-                    ),
+            ),
+          ),
+        ),
         if (images.length > 1) ...[
           Positioned(
             bottom: 8,
@@ -746,7 +929,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                     color: active
                         ? Colors.white
                         : Colors.white.withValues(alpha: 0.5),
-                        ),
+                  ),
                 );
               }),
             ),
@@ -755,8 +938,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             top: 8,
             right: 8,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.55),
                 borderRadius: BorderRadius.circular(10),
@@ -781,21 +963,19 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         color: color.withValues(alpha: 0.15),
         child: Text(msg,
             style: TextStyle(
-                fontSize: 12,
-                color: color,
-                fontWeight: FontWeight.w600)),
+                fontSize: 12, color: color, fontWeight: FontWeight.w600)),
       );
 
   // ── DETAILS TAB ─────────────────────────────────────────
   Widget _buildDetails(
       Color textColor, Color subColor, bool isDark, Color accent) {
     return ListView(
-                        padding: const EdgeInsets.all(16),
-                          children: [
+      padding: const EdgeInsets.all(16),
+      children: [
         // Status
         Row(children: [
           _statusChip(_item.status),
-                                  const SizedBox(width: 8),
+          const SizedBox(width: 8),
           if (_item.lastTakenBy != null)
             Expanded(
               child: Text(
@@ -804,8 +984,11 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 style: TextStyle(fontSize: 11, color: subColor),
                 overflow: TextOverflow.ellipsis,
               ),
-                              ),
+            ),
         ]),
+        const SizedBox(height: 14),
+
+        _buildCabinetControlCard(textColor, subColor),
         const SizedBox(height: 14),
 
         // ── Description shown prominently right up top ──
@@ -819,27 +1002,26 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: accent.withValues(alpha: 0.25)),
             ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Row(children: [
                   Icon(Icons.description_outlined, size: 16, color: accent),
                   const SizedBox(width: 6),
                   Text('Description',
-                              style: TextStyle(
+                      style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           color: accent)),
                 ]),
-                            const SizedBox(height: 8),
-                            Text(
-                              _item.description!,
-                  style: TextStyle(
-                      fontSize: 14, height: 1.4, color: textColor),
-                            ),
-                          ],
-                        ),
-                      ),
+                const SizedBox(height: 8),
+                Text(
+                  _item.description!,
+                  style: TextStyle(fontSize: 14, height: 1.4, color: textColor),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 14),
         ],
 
@@ -851,15 +1033,15 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             _row('Brand', _item.brand!, textColor, subColor),
           if (_item.note != null)
             _row('Note', _item.note!, textColor, subColor),
-                  if (_item.tags.isNotEmpty)
+          if (_item.tags.isNotEmpty)
             _row('Tags', _item.tags.join(', '), textColor, subColor),
         ]),
         const SizedBox(height: 10),
 
         _infoCard(textColor, [
           if (_item.hasExpiry)
-            _row('Expiry Date', _fmt.format(_item.expiryDate!),
-                textColor, subColor,
+            _row('Expiry Date', _fmt.format(_item.expiryDate!), textColor,
+                subColor,
                 color: _item.isExpired
                     ? Colors.red
                     : _item.isExpiringSoon
@@ -869,32 +1051,33 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             _row('Production Date', _fmt.format(_item.productionDate!),
                 textColor, subColor),
           _row('Unit', _item.unit, textColor, subColor),
-          _row('Low Stock Alert',
-              '${_item.lowStockThreshold} ${_item.unit}',
+          _row('Low Stock Alert', '${_item.lowStockThreshold} ${_item.unit}',
               textColor, subColor),
         ]),
 
         if (_item.aiCountedAt != null) ...[
           const SizedBox(height: 10),
-          _infoCard(textColor, [
-            _row('AI Counted', '${_item.aiCountedQuantity} ${_item.unit}',
-                textColor, subColor),
-            _row('Count Date', _fmtFull.format(_item.aiCountedAt!),
-                textColor, subColor),
-          ], header: '🤖 AI Count Record'),
+          _infoCard(
+              textColor,
+              [
+                _row('AI Counted', '${_item.aiCountedQuantity} ${_item.unit}',
+                    textColor, subColor),
+                _row('Count Date', _fmtFull.format(_item.aiCountedAt!),
+                    textColor, subColor),
+              ],
+              header: '🤖 AI Count Record'),
         ],
 
         const SizedBox(height: 20),
         OutlinedButton.icon(
           onPressed: _delete,
           icon: const Icon(Icons.delete_outline, color: Colors.red),
-          label: const Text('Delete Item',
-              style: TextStyle(color: Colors.red)),
+          label: const Text('Delete Item', style: TextStyle(color: Colors.red)),
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: Colors.red),
             minimumSize: const Size.fromHeight(44),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         const SizedBox(height: 16),
@@ -913,12 +1096,12 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           context,
           MaterialPageRoute(
             builder: (_) => const MedicineInfoScreen(),
-                                ),
+          ),
         ),
         icon: const Text('💊', style: TextStyle(fontSize: 18)),
         label: const Text(
           '药物查询 / Medicine Info',
-                                  style: TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -928,56 +1111,46 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           minimumSize: const Size.fromHeight(48),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-                            ),
-                        ),
-                      ),
+          ),
+        ),
+      ),
     );
   }
 
   // ── QUANTITY TAB ────────────────────────────────────────
   // SUPERVISOR REQ 1: Clear quantity tracking and display
-  Widget _buildQuantity(
-      Color textColor, Color subColor, bool isDark) {
+  Widget _buildQuantity(Color textColor, Color subColor, bool isDark) {
     final pct = _item.usagePercent;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // Three-number display
-                    Card(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
-                      child: Padding(
+        Card(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
+                children: [
                   _qtyBox('In Cabinet', '${_item.quantity}',
                       const Color(0xFF4ECDC4), _item.unit, textColor),
-                  Container(width: 1, height: 50,
-                      color: Colors.grey.shade300),
+                  Container(width: 1, height: 50, color: Colors.grey.shade300),
                   _qtyBox('Initial', '${_item.initialQuantity}',
                       const Color(0xFF45B7D1), _item.unit, textColor),
-                  Container(width: 1, height: 50,
-                      color: Colors.grey.shade300),
+                  Container(width: 1, height: 50, color: Colors.grey.shade300),
                   _qtyBox('Total Used', '${_item.totalWithdrawn}',
                       Colors.orange, _item.unit, textColor),
                 ],
               ),
               const SizedBox(height: 16),
-              Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Usage',
-                        style: TextStyle(
-                            fontSize: 12, color: subColor)),
-                            Text(
-                        '${(pct * 100).toInt()}% consumed',
-                              style: TextStyle(
-                            fontSize: 12, color: subColor)),
-                  ]),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('Usage', style: TextStyle(fontSize: 12, color: subColor)),
+                Text('${(pct * 100).toInt()}% consumed',
+                    style: TextStyle(fontSize: 12, color: subColor)),
+              ]),
               const SizedBox(height: 6),
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
@@ -993,8 +1166,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                 ),
               ),
             ]),
-                              ),
-                            ),
+          ),
+        ),
         const SizedBox(height: 14),
 
         // Action buttons
@@ -1004,7 +1177,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               onPressed: _isSaving ? null : _showWithdrawDialog,
               icon: _isSaving
                   ? const SizedBox(
-                      width: 16, height: 16,
+                      width: 16,
+                      height: 16,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.arrow_circle_down),
@@ -1024,15 +1198,14 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
               icon: const Icon(Icons.arrow_circle_up),
               label: const Text('Return 1'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: isDark
-                    ? const Color(0xFF2D2D2D)
-                    : Colors.grey.shade200,
+                backgroundColor:
+                    isDark ? const Color(0xFF2D2D2D) : Colors.grey.shade200,
                 foregroundColor: textColor,
                 minimumSize: const Size.fromHeight(48),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
-                              ),
-                            ),
+              ),
+            ),
           ),
         ]),
         const SizedBox(height: 10),
@@ -1042,10 +1215,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           onPressed: _isAiCounting ? null : _aiCountFromPhoto,
           icon: _isAiCounting
               ? const SizedBox(
-                  width: 16, height: 16,
+                  width: 16,
+                  height: 16,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Color(0xFF4ECDC4)))
+                      strokeWidth: 2, color: Color(0xFF4ECDC4)))
               : const Icon(Icons.auto_awesome,
                   color: Color(0xFF4ECDC4), size: 18),
           label: const Text('AI Count from Photo',
@@ -1053,23 +1226,21 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: Color(0xFF4ECDC4)),
             minimumSize: const Size.fromHeight(44),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         const SizedBox(height: 4),
         // SUPERVISOR REQ 7: Limitation notice
-                                  Text(
+        Text(
           '⚠️ Limitation: AI counting accuracy depends on photo '
           'quality and item visibility. Physical verification is '
           'always recommended.',
           style: TextStyle(
-              fontSize: 10,
-              color: subColor,
-              fontStyle: FontStyle.italic),
+              fontSize: 10, color: subColor, fontStyle: FontStyle.italic),
           textAlign: TextAlign.center,
-                                  ),
-                                ],
+        ),
+      ],
     );
   }
 
@@ -1082,8 +1253,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.history, size: 60,
-                color: subColor.withValues(alpha: 0.25)),
+            Icon(Icons.history,
+                size: 60, color: subColor.withValues(alpha: 0.25)),
             const SizedBox(height: 12),
             Text('No withdrawal history yet',
                 style: TextStyle(fontSize: 15, color: subColor)),
@@ -1091,9 +1262,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             Text('Use "Take Out" to record withdrawals',
                 style: TextStyle(fontSize: 12, color: subColor)),
           ],
-            ),
-    );
-  }
+        ),
+      );
+    }
 
     return ListView.separated(
       padding: const EdgeInsets.all(16),
@@ -1105,17 +1276,20 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         final by = rec['by'] as String? ?? 'Unknown';
         final note = rec['note'] as String?;
         DateTime? at;
-        try { at = DateTime.parse(rec['at'] as String); } catch (_) {}
+        try {
+          at = DateTime.parse(rec['at'] as String);
+        } catch (_) {}
 
         return Card(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: Padding(
-      padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(12),
             child: Row(children: [
               Container(
-                width: 46, height: 46,
-      decoration: BoxDecoration(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
                   color: Colors.orange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1125,37 +1299,37 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.orange)),
-        ),
-      ),
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-              Text(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
                       '$qty ${_item.unit} taken by $by',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           color: textColor),
-          ),
+                    ),
                     if (note != null && note.isNotEmpty)
                       Text(note,
-              style: TextStyle(
-                              fontSize: 12, color: textColor
-                                  .withValues(alpha: 0.6))),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: textColor.withValues(alpha: 0.6))),
                     if (at != null)
                       Text(_fmtFull.format(at),
                           style: TextStyle(
-                              fontSize: 11, color: textColor
-                                  .withValues(alpha: 0.45))),
+                              fontSize: 11,
+                              color: textColor.withValues(alpha: 0.45))),
                   ],
+                ),
               ),
-            ),
             ]),
-      ),
-    );
+          ),
+        );
       },
     );
   }
@@ -1164,30 +1338,35 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
   Widget _statusChip(String status) {
     Color c;
     switch (status) {
-      case 'inside':  c = const Color(0xFF00B894); break;
-      case 'taken':   c = const Color(0xFFFDCB6E); break;
-      case 'used':    c = const Color(0xFF6C5CE7); break;
-      case 'damaged': c = Colors.red; break;
-      default:        c = Colors.grey;
+      case 'inside':
+        c = const Color(0xFF00B894);
+        break;
+      case 'taken':
+        c = const Color(0xFFFDCB6E);
+        break;
+      case 'used':
+        c = const Color(0xFF6C5CE7);
+        break;
+      case 'damaged':
+        c = Colors.red;
+        break;
+      default:
+        c = Colors.grey;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-          color: c, borderRadius: BorderRadius.circular(20)),
+      decoration:
+          BoxDecoration(color: c, borderRadius: BorderRadius.circular(20)),
       child: Text(status.toUpperCase(),
           style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 11)),
+              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
     );
   }
 
-  Widget _infoCard(Color textColor, List<Widget> rows,
-      {String? header}) {
+  Widget _infoCard(Color textColor, List<Widget> rows, {String? header}) {
     if (rows.isEmpty) return const SizedBox.shrink();
     return Card(
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -1196,7 +1375,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             if (header != null) ...[
               Text(header,
                   style: const TextStyle(
-          fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w600,
                       fontSize: 13,
                       color: Color(0xFF4ECDC4))),
               const Divider(height: 14),
@@ -1208,8 +1387,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     );
   }
 
-  Widget _row(String label, String value,
-      Color textColor, Color subColor, {Color? color}) =>
+  Widget _row(String label, String value, Color textColor, Color subColor,
+          {Color? color}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
@@ -1217,8 +1396,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
           children: [
             SizedBox(
               width: 110,
-              child: Text(label,
-                  style: TextStyle(fontSize: 12, color: subColor)),
+              child:
+                  Text(label, style: TextStyle(fontSize: 12, color: subColor)),
             ),
             Expanded(
               child: Text(value,
@@ -1231,20 +1410,16 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
         ),
       );
 
-  Widget _qtyBox(String label, String value, Color color,
-      String unit, Color textColor) =>
+  Widget _qtyBox(String label, String value, Color color, String unit,
+          Color textColor) =>
       Column(children: [
         Text(value,
             style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: color)),
-        Text(unit,
-            style: TextStyle(fontSize: 10, color: color)),
+                fontSize: 24, fontWeight: FontWeight.bold, color: color)),
+        Text(unit, style: TextStyle(fontSize: 10, color: color)),
         const SizedBox(height: 2),
         Text(label,
             style: TextStyle(
-                fontSize: 10,
-                color: textColor.withValues(alpha: 0.5))),
+                fontSize: 10, color: textColor.withValues(alpha: 0.5))),
       ]);
 }

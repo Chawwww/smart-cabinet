@@ -253,6 +253,59 @@ class NotificationManager {
     }
   }
 
+  // ── Get Unread Count Stream ──────────────────────────
+
+  Stream<int> getUnreadCountStream(String userId) {
+    return _firestore
+        .collection(AppConstants.notificationsCollection)
+        .where('userId', isEqualTo: userId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
+
+  // ── Get Unread Count ─────────────────────────────────
+
+  Future<int> getUnreadCount(String userId) async {
+    final snapshot = await _firestore
+        .collection(AppConstants.notificationsCollection)
+        .where('userId', isEqualTo: userId)
+        .where('isRead', isEqualTo: false)
+        .get();
+    return snapshot.docs.length;
+  }
+
+  // ── Get Notifications Stream ─────────────────────────
+
+  Stream<List<NotificationModel>> getNotificationsStream(String userId) {
+    return _firestore
+        .collection(AppConstants.notificationsCollection)
+        .where('userId', isEqualTo: userId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => NotificationModel.fromFirestore(doc))
+            .toList());
+  }
+
+  // ── Get Recent Notifications ─────────────────────────
+
+  Future<List<NotificationModel>> getRecentNotifications(
+    String userId, {
+    int limit = 20,
+  }) async {
+    final snapshot = await _firestore
+        .collection(AppConstants.notificationsCollection)
+        .where('userId', isEqualTo: userId)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
+
+    return snapshot.docs
+        .map((doc) => NotificationModel.fromFirestore(doc))
+        .toList();
+  }
+
   // ── Mark Notification as Read ────────────────────────
 
   Future<void> markAsRead(String notificationId) async {
@@ -289,6 +342,64 @@ class NotificationManager {
     final snapshot = await _firestore
         .collection(AppConstants.notificationsCollection)
         .where('userId', isEqualTo: userId)
+        .get();
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  // ── Get Notification by ID ───────────────────────────
+
+  Future<NotificationModel?> getNotification(String notificationId) async {
+    try {
+      final doc = await _firestore
+          .collection(AppConstants.notificationsCollection)
+          .doc(notificationId)
+          .get();
+      
+      if (doc.exists) {
+        return NotificationModel.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      print('❌ Failed to get notification: $e');
+      return null;
+    }
+  }
+
+  // ── Update Notification ──────────────────────────────
+
+  Future<void> updateNotification({
+    required String notificationId,
+    bool? isRead,
+    String? title,
+    String? body,
+  }) async {
+    final Map<String, dynamic> updates = {};
+    if (isRead != null) updates['isRead'] = isRead;
+    if (title != null) updates['title'] = title;
+    if (body != null) updates['body'] = body;
+    
+    if (updates.isNotEmpty) {
+      await _firestore
+          .collection(AppConstants.notificationsCollection)
+          .doc(notificationId)
+          .update(updates);
+    }
+  }
+
+  // ── Clear Old Notifications ──────────────────────────
+
+  Future<void> clearOldNotifications(String userId, {int days = 30}) async {
+    final cutoffDate = DateTime.now().subtract(Duration(days: days));
+    
+    final snapshot = await _firestore
+        .collection(AppConstants.notificationsCollection)
+        .where('userId', isEqualTo: userId)
+        .where('createdAt', isLessThan: Timestamp.fromDate(cutoffDate))
         .get();
 
     final batch = _firestore.batch();

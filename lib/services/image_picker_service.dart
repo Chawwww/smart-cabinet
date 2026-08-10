@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:path/path.dart' as path;
+// FIX: Keep this import but use it correctly
+import 'package:path/path.dart' as path_utils;
 
 class ImagePickerService {
   static final ImagePickerService _instance = ImagePickerService._internal();
@@ -52,7 +53,8 @@ class ImagePickerService {
     String? fileName,
   }) async {
     try {
-      final filePath = fileName ?? path.basename(image.path);
+      // FIXED: Use path.basename with the alias
+      final filePath = fileName ?? path_utils.basename(image.path);
       final ref = _storage.ref().child('$path/$filePath');
       await ref.putFile(image);
       return await ref.getDownloadURL();
@@ -95,8 +97,7 @@ class ImagePickerService {
   // ── Compress Image ──
   Future<File> compressImage(File image, {int quality = 85}) async {
     try {
-      final bytes = await image.readAsBytes();
-      // For web/mobile, we use the image_picker quality setting instead
+      // The image_picker already handles quality during picking
       return image;
     } catch (e) {
       debugPrint('❌ Image compression error: $e');

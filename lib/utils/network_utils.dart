@@ -9,7 +9,8 @@ class NetworkUtils {
   NetworkUtils._internal();
 
   final Connectivity _connectivity = Connectivity();
-  final StreamController<bool> _networkStreamController = StreamController<bool>.broadcast();
+  final StreamController<bool> _networkStreamController =
+      StreamController<bool>.broadcast();
 
   // ── Stream ──
   Stream<bool> get networkStream => _networkStreamController.stream;
@@ -18,7 +19,7 @@ class NetworkUtils {
   Future<bool> isConnected() async {
     try {
       final result = await _connectivity.checkConnectivity();
-      return result != ConnectivityResult.none;
+      return result.any((connection) => connection != ConnectivityResult.none);
     } catch (_) {
       return false;
     }
@@ -28,22 +29,13 @@ class NetworkUtils {
   Future<String> getConnectionType() async {
     try {
       final result = await _connectivity.checkConnectivity();
-      switch (result) {
-        case ConnectivityResult.wifi:
-          return 'WiFi';
-        case ConnectivityResult.mobile:
-          return 'Mobile Data';
-        case ConnectivityResult.ethernet:
-          return 'Ethernet';
-        case ConnectivityResult.vpn:
-          return 'VPN';
-        case ConnectivityResult.bluetooth:
-          return 'Bluetooth';
-        case ConnectivityResult.other:
-          return 'Other';
-        default:
-          return 'None';
-      }
+      if (result.contains(ConnectivityResult.wifi)) return 'WiFi';
+      if (result.contains(ConnectivityResult.mobile)) return 'Mobile Data';
+      if (result.contains(ConnectivityResult.ethernet)) return 'Ethernet';
+      if (result.contains(ConnectivityResult.vpn)) return 'VPN';
+      if (result.contains(ConnectivityResult.bluetooth)) return 'Bluetooth';
+      if (result.contains(ConnectivityResult.other)) return 'Other';
+      return 'None';
     } catch (_) {
       return 'Unknown';
     }
@@ -51,8 +43,9 @@ class NetworkUtils {
 
   // ── Listen for Changes ──
   void startListening() {
-    _connectivity.onConnectivityChanged.listen((result) {
-      final isOnline = result != ConnectivityResult.none;
+    _connectivity.onConnectivityChanged.listen((results) {
+      final isOnline =
+          results.any((result) => result != ConnectivityResult.none);
       _networkStreamController.add(isOnline);
       debugPrint('📶 Network status: ${isOnline ? 'Online' : 'Offline'}');
     });

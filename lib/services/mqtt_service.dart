@@ -38,7 +38,7 @@ class MQTTService {
       );
 
       _client!.port = AppConstants.mqttPort;
-      _client!.keepAlivePeriod = const Duration(seconds: 20);
+      _client!.keepAlivePeriod = 20;
       _client!.autoReconnect = true;
       _client!.logging(on: false);
 
@@ -56,7 +56,8 @@ class MQTTService {
       };
 
       final connMessage = MqttConnectMessage()
-          .withClientIdentifier('flutter_client_${DateTime.now().millisecondsSinceEpoch}')
+          .withClientIdentifier(
+              'flutter_client_${DateTime.now().millisecondsSinceEpoch}')
           .withWillTopic('willtopic')
           .withWillMessage('Client disconnected')
           .startClean()
@@ -135,12 +136,16 @@ class MQTTService {
         break;
 
       case 'smart_cabinet/led/upper':
-        final isOn = lowerPayload == '1' || lowerPayload == 'true' || lowerPayload == 'on';
+        final isOn = lowerPayload == '1' ||
+            lowerPayload == 'true' ||
+            lowerPayload == 'on';
         onUpperLedChanged?.call(isOn);
         break;
 
       case 'smart_cabinet/led/lower':
-        final isOn = lowerPayload == '1' || lowerPayload == 'true' || lowerPayload == 'on';
+        final isOn = lowerPayload == '1' ||
+            lowerPayload == 'true' ||
+            lowerPayload == 'on';
         onLowerLedChanged?.call(isOn);
         break;
     }
@@ -156,10 +161,10 @@ class MQTTService {
         ? AppConstants.mqttServoTopicUpper
         : AppConstants.mqttServoTopicLower;
 
-    final message = MqttClientPayloadBuilder()
-      ..addString(open ? '90' : '0');
+    final message = MqttClientPayloadBuilder()..addString(open ? '90' : '0');
 
-    await _client!.publishMessage(
+    // FIXED: No await - publishMessage returns void
+    _client!.publishMessage(
       topic,
       MqttQos.atLeastOnce,
       message.payload!,
@@ -175,10 +180,10 @@ class MQTTService {
         ? AppConstants.mqttLedTopicUpper
         : AppConstants.mqttLedTopicLower;
 
-    final message = MqttClientPayloadBuilder()
-      ..addString(on ? '1' : '0');
+    final message = MqttClientPayloadBuilder()..addString(on ? '1' : '0');
 
-    await _client!.publishMessage(
+    // FIXED: No await - publishMessage returns void
+    _client!.publishMessage(
       topic,
       MqttQos.atLeastOnce,
       message.payload!,
@@ -200,7 +205,7 @@ class MQTTService {
   // ── Disconnect ──
   Future<void> disconnect() async {
     try {
-      await _client?.disconnect();
+      _client?.disconnect();
       _isConnected = false;
       debugPrint('🔴 MQTT disconnected');
     } catch (e) {

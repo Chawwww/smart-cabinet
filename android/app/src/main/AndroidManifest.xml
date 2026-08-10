@@ -2,21 +2,33 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.example.smart_cabinet">
 
+    <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    
+    <!-- Audio (for voice input) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    
+    <!-- Bluetooth Permissions (for older Android versions) -->
     <uses-permission android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30"/>
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
-        tools:targetApi="31"/>
-
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30"/>
+    
+    <!-- Android 12+ Bluetooth Permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-    android:usesPermissionFlags="neverForLocation" />
+        android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    
+    <!-- Location Permissions (REQUIRED for BLE scanning) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    
+    <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
+    <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-
 
     <application
         android:label="Smart Cabinet"

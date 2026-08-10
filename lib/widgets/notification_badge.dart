@@ -25,8 +25,10 @@ class NotificationBadge extends StatelessWidget {
       );
     }
 
+    final notificationManager = NotificationManager();
+    
     return StreamBuilder<int>(
-      stream: NotificationManager().streamUnreadNotificationCount(userId),
+      stream: notificationManager.getUnreadCountStream(userId),
       builder: (context, snapshot) {
         final count = snapshot.data ?? 0;
         

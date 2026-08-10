@@ -1,5 +1,7 @@
 // lib/utils/permission_utils.dart
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart'; // ADDED
+import 'dart:io' show Platform; // ADDED
 import 'package:permission_handler/permission_handler.dart';
 
 class PermissionUtils {

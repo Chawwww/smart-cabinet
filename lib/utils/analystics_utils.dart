@@ -1,7 +1,7 @@
 // lib/utils/analytics_utils.dart
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:firebase_analytics/observer.dart';
 
 class AnalyticsUtils {
   static final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
@@ -24,7 +24,7 @@ class AnalyticsUtils {
   // ── Log Event ──
   static Future<void> logEvent({
     required String name,
-    Map<String, dynamic>? parameters,
+    Map<String, Object>? parameters,
   }) async {
     try {
       await _analytics.logEvent(
@@ -102,7 +102,8 @@ class AnalyticsUtils {
   }
 
   // ── Log AI Search ──
-  static Future<void> logAISearch({required String query, int? resultCount}) async {
+  static Future<void> logAISearch(
+      {required String query, int? resultCount}) async {
     await logEvent(
       name: 'ai_search',
       parameters: {
@@ -202,5 +203,34 @@ class AnalyticsUtils {
   // ── Get Analytics Observer ──
   static AnalyticsObserver getObserver() {
     return AnalyticsObserver(analytics: _analytics);
+  }
+}
+
+// Custom AnalyticsObserver class for Firebase Analytics
+class AnalyticsObserver extends NavigatorObserver {
+  final FirebaseAnalytics analytics;
+
+  AnalyticsObserver({required this.analytics});
+
+  @override
+  void didPush(Route route, Route? previousRoute) {
+    super.didPush(route, previousRoute);
+    if (route.settings.name != null) {
+      analytics.logScreenView(
+        screenName: route.settings.name,
+        screenClass: route.runtimeType.toString(),
+      );
+    }
+  }
+
+  @override
+  void didReplace({Route? newRoute, Route? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    if (newRoute?.settings.name != null) {
+      analytics.logScreenView(
+        screenName: newRoute?.settings.name,
+        screenClass: newRoute.runtimeType.toString(),
+      );
+    }
   }
 }

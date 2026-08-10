@@ -18,8 +18,7 @@ extension CabinetDoorX on CabinetDoor {
   String get label => this == CabinetDoor.upper ? 'Upper Door' : 'Lower Door';
 }
 
-// ✅ ADDED — string -> CabinetDoor helper, used by screens that store a
-// door id (e.g. BoxModel.doorId) and need the enum to call IoTService.
+// String -> CabinetDoor helper
 CabinetDoor? cabinetDoorFromId(String? id) {
   switch (id) {
     case AppConstants.doorUpper:
@@ -40,7 +39,7 @@ class IoTService {
 
   String? _connectedDeviceId;
   bool _isConnected = false;
-  bool _isScanning  = false;
+  bool _isScanning = false;
 
   List<DiscoveredDevice> _discoveredDevices = [];
 
@@ -64,12 +63,10 @@ class IoTService {
   Stream<String> get connectionStatus => _connectionStatusController.stream;
 
   bool get isConnected => _isConnected;
-  bool get isScanning  => _isScanning;
+  bool get isScanning => _isScanning;
   bool get isUpperDoorOpen => _upperDoorOpen;
   bool get isLowerDoorOpen => _lowerDoorOpen;
 
-  // ✅ ADDED — public getter so screens (Add/Edit Cabinet, Add Item) can
-  // know WHICH device is connected, not just whether one is.
   String? get connectedDeviceId => _connectedDeviceId;
 
   List<DiscoveredDevice> get discoveredDevices => _discoveredDevices;
@@ -82,9 +79,29 @@ class IoTService {
   }
 
   Future<void> _requestPermissions() async {
-    await Permission.bluetoothScan.request();
-    await Permission.bluetoothConnect.request();
-    await Permission.locationWhenInUse.request();
+    // Request all required permissions
+    final permissions = [
+      Permission.bluetooth,
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse,
+      Permission.locationAlways,
+    ];
+    
+    final results = await permissions.request();
+    
+    // Check which permissions were granted
+    for (final entry in results.entries) {
+      print('📱 Permission ${entry.key}: ${entry.value}');
+    }
+    
+    final allGranted = results.values.every((status) => status.isGranted);
+    
+    if (!allGranted) {
+      print('⚠️ Some permissions were denied');
+    } else {
+      print('✅ All permissions granted');
+    }
   }
 
   // ──────────────────────────────────────────────
@@ -95,14 +112,36 @@ class IoTService {
     _isScanning = true;
     _discoveredDevices.clear();
 
-    _scanSubscription = _ble.scanForDevices(withServices: []).listen(
+    print('🔍 Starting BLE scan...');
+
+    _scanSubscription = _ble.scanForDevices(
+      withServices: [],
+      scanMode: ScanMode.lowLatency,
+    ).listen(
       (device) {
+        print('🔍 Found device: ${device.name} (${device.id})');
         if (!_discoveredDevices.any((e) => e.id == device.id)) {
           _discoveredDevices.add(device);
+          _connectionStatusController.add("Found: ${device.name}");
         }
       },
-      onError: (e) => _connectionStatusController.add("Scan error: $e"),
+      onError: (e) {
+        print('❌ Scan error: $e');
+        _connectionStatusController.add("Scan error: $e");
+        _isScanning = false;
+      },
     );
+
+    // Auto-stop after 10 seconds
+    Future.delayed(const Duration(seconds: 10), () {
+      if (_isScanning) {
+        stopScan();
+        _connectionStatusController.add(
+          "Scan complete. Found ${_discoveredDevices.length} devices."
+        );
+        print('✅ Scan complete. Found ${_discoveredDevices.length} devices.');
+      }
+    });
   }
 
   Future<void> stopScan() async {
@@ -114,12 +153,14 @@ class IoTService {
   // Connect
   // ──────────────────────────────────────────────
   Future<bool> connectToDevice(String deviceId) async {
+    print('🔗 Connecting to device: $deviceId');
     try {
       _connectionSubscription = _ble.connectToDevice(
         id: deviceId,
         connectionTimeout: const Duration(seconds: 20),
       ).listen(
         (update) {
+          print('📡 Connection state: ${update.connectionState}');
           if (update.connectionState == DeviceConnectionState.connected) {
             _connectedDeviceId = deviceId;
             _isConnected = true;
@@ -140,6 +181,7 @@ class IoTService {
       );
       return true;
     } catch (e) {
+      print('❌ Connection failed: $e');
       _connectionStatusController.add("Failed: $e");
       return false;
     }
@@ -190,18 +232,14 @@ class IoTService {
           _lowerDoorOpen = isOpen;
         }
 
-        // The ESP32 sends a status update for BOTH doors any time EITHER
-        // one changes. Without this check, the untouched door would also
-        // emit a (spurious, unchanged) event every time — causing a
-        // notification to pop for a door that didn't actually move.
         // Only emit when this specific door's state actually flipped.
         if (isOpen == previousState) return;
 
         _doorStreamController.add({
-          "door":   door.id,      // "upper" or "lower"
+          "door": door.id, // "upper" or "lower"
           "status": value,
           "isOpen": isOpen,
-          "time":   DateTime.now(),
+          "time": DateTime.now(),
         });
       },
       onError: (e) => _connectionStatusController.add(

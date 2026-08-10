@@ -11,6 +11,7 @@ class ItemModel {
   // CHANGED: nullable so items can be added without cabinet
   final String? cabinetId;
   final String? boxId;
+  final String? doorId;
 
   final String? icon;
   final String? color;
@@ -63,6 +64,7 @@ class ItemModel {
     required this.categoryId,
     this.cabinetId,
     this.boxId,
+    this.doorId,
     this.icon,
     this.color,
     this.quantity = 0,
@@ -103,6 +105,7 @@ class ItemModel {
       categoryId: data['categoryId'] ?? '',
       cabinetId: data['cabinetId'],
       boxId: data['boxId'],
+      doorId: data['doorId'],
       icon: data['icon'],
       color: data['color'],
       quantity: data['quantity'] ?? 0,
@@ -110,8 +113,8 @@ class ItemModel {
       unit: data['unit'] ?? 'pcs',
       lowStockThreshold: data['lowStockThreshold'] ?? 5,
       withdrawalHistory: List<Map<String, dynamic>>.from(
-          (data['withdrawalHistory'] ?? []).map(
-              (e) => Map<String, dynamic>.from(e as Map))),
+          (data['withdrawalHistory'] ?? [])
+              .map((e) => Map<String, dynamic>.from(e as Map))),
       expiryDate: (data['expiryDate'] as Timestamp?)?.toDate(),
       productionDate: (data['productionDate'] as Timestamp?)?.toDate(),
       status: data['status'] ?? 'inside',
@@ -138,41 +141,47 @@ class ItemModel {
   }
 
   Map<String, dynamic> toFirestore() => {
-    'name': name,
-    'description': description,
-    'categoryId': categoryId,
-    'cabinetId': cabinetId,
-    'boxId': boxId,
-    'icon': icon,
-    'color': color,
-    'quantity': quantity,
-    'initialQuantity': initialQuantity,
-    'unit': unit,
-    'lowStockThreshold': lowStockThreshold,
-    'withdrawalHistory': withdrawalHistory,
-    'expiryDate': expiryDate != null ? Timestamp.fromDate(expiryDate!) : null,
-    'productionDate': productionDate != null ? Timestamp.fromDate(productionDate!) : null,
-    'status': status,
-    'brand': brand,
-    'modelNumber': modelNumber,
-    'serialNumber': serialNumber,
-    'purchasePrice': purchasePrice,
-    'purchaseDate': purchaseDate != null ? Timestamp.fromDate(purchaseDate!) : null,
-    'purchaseLocation': purchaseLocation,
-    'imageUrls': imageUrls,
-    'tags': tags,
-    'note': note,
-    'customFields': customFields,
-    'isFavorite': isFavorite,
-    'lastTakenBy': lastTakenBy,
-    'lastTakenTime': lastTakenTime != null ? Timestamp.fromDate(lastTakenTime!) : null,
-    'takenCount': takenCount,
-    'aiCountedQuantity': aiCountedQuantity,
-    'aiCountedAt': aiCountedAt != null ? Timestamp.fromDate(aiCountedAt!) : null,
-    'createdAt': Timestamp.fromDate(createdAt),
-    'updatedAt': Timestamp.fromDate(updatedAt),
-    'userId': userId,
-  };
+        'name': name,
+        'description': description,
+        'categoryId': categoryId,
+        'cabinetId': cabinetId,
+        'boxId': boxId,
+        'doorId': doorId,
+        'icon': icon,
+        'color': color,
+        'quantity': quantity,
+        'initialQuantity': initialQuantity,
+        'unit': unit,
+        'lowStockThreshold': lowStockThreshold,
+        'withdrawalHistory': withdrawalHistory,
+        'expiryDate':
+            expiryDate != null ? Timestamp.fromDate(expiryDate!) : null,
+        'productionDate':
+            productionDate != null ? Timestamp.fromDate(productionDate!) : null,
+        'status': status,
+        'brand': brand,
+        'modelNumber': modelNumber,
+        'serialNumber': serialNumber,
+        'purchasePrice': purchasePrice,
+        'purchaseDate':
+            purchaseDate != null ? Timestamp.fromDate(purchaseDate!) : null,
+        'purchaseLocation': purchaseLocation,
+        'imageUrls': imageUrls,
+        'tags': tags,
+        'note': note,
+        'customFields': customFields,
+        'isFavorite': isFavorite,
+        'lastTakenBy': lastTakenBy,
+        'lastTakenTime':
+            lastTakenTime != null ? Timestamp.fromDate(lastTakenTime!) : null,
+        'takenCount': takenCount,
+        'aiCountedQuantity': aiCountedQuantity,
+        'aiCountedAt':
+            aiCountedAt != null ? Timestamp.fromDate(aiCountedAt!) : null,
+        'createdAt': Timestamp.fromDate(createdAt),
+        'updatedAt': Timestamp.fromDate(updatedAt),
+        'userId': userId,
+      };
 
   Map<String, dynamic> toJson() {
     return {
@@ -182,6 +191,7 @@ class ItemModel {
       'categoryId': categoryId,
       'cabinetId': cabinetId,
       'boxId': boxId,
+      'doorId': doorId,
       'icon': icon,
       'color': color,
       'quantity': quantity,
@@ -221,6 +231,8 @@ class ItemModel {
     String? categoryId,
     String? cabinetId,
     String? boxId,
+    String? doorId,
+    bool clearDoorId = false,
     String? icon,
     String? color,
     int? quantity,
@@ -258,6 +270,7 @@ class ItemModel {
       categoryId: categoryId ?? this.categoryId,
       cabinetId: cabinetId ?? this.cabinetId,
       boxId: boxId ?? this.boxId,
+      doorId: clearDoorId ? null : (doorId ?? this.doorId),
       icon: icon ?? this.icon,
       color: color ?? this.color,
       quantity: quantity ?? this.quantity,
@@ -295,45 +308,50 @@ class ItemModel {
   // ==========================
 
   bool get hasLocation =>
-      cabinetId != null && cabinetId!.isNotEmpty &&
-      boxId != null && boxId!.isNotEmpty;
-      
+      cabinetId != null &&
+      cabinetId!.isNotEmpty &&
+      boxId != null &&
+      boxId!.isNotEmpty;
+
   bool get isLowStock => quantity > 0 && quantity <= lowStockThreshold;
   bool get isOutOfStock => quantity <= 0;
   bool get hasExpiry => expiryDate != null;
-  
+
   bool get isExpired {
     if (expiryDate == null) return false;
-    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final today =
+        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     return expiryDate!.isBefore(today);
   }
-  
+
   bool get isExpiringSoon {
     if (expiryDate == null || isExpired) return false;
-    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final today =
+        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     return expiryDate!.difference(today).inDays <= 7;
   }
-  
+
   String get expiryStatus {
     if (expiryDate == null) return 'normal';
     if (isExpired) return 'expired';
     if (isExpiringSoon) return 'expiring_soon';
     return 'normal';
   }
-  
+
   String get daysLeftText {
     if (expiryDate == null) return '';
-    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final today =
+        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final days = expiryDate!.difference(today).inDays;
     if (days < 0) return 'Expired ${-days}d ago';
     if (days == 0) return 'Expires today!';
     if (days == 1) return 'Expires tomorrow!';
     return '$days days left';
   }
-  
+
   int get totalWithdrawn =>
       withdrawalHistory.fold(0, (s, w) => s + ((w['qty'] as int?) ?? 0));
-      
+
   double get usagePercent {
     if (initialQuantity <= 0) return 0;
     return (totalWithdrawn / initialQuantity).clamp(0.0, 1.0);

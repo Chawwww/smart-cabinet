@@ -16,6 +16,7 @@ class SyncService {
   static const String _syncIntervalKey = 'sync_interval_minutes';
 
   Timer? _syncTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isSyncing = false;
   final Connectivity _connectivity = Connectivity();
 
@@ -27,8 +28,10 @@ class SyncService {
   // ── Initialize ──
   Future<void> initialize() async {
     // Listen to connectivity changes
-    _connectivity.onConnectivityChanged.listen((result) {
-      if (result != ConnectivityResult.none) {
+    await _connectivitySubscription?.cancel();
+    _connectivitySubscription =
+        _connectivity.onConnectivityChanged.listen((results) {
+      if (results.any((result) => result != ConnectivityResult.none)) {
         debugPrint('📶 Internet restored - auto syncing...');
         performSync();
       }
@@ -44,7 +47,9 @@ class SyncService {
   // ── Perform Sync ──
   Future<void> performSync() async {
     if (_isSyncing) return;
-    if (await _connectivity.checkConnectivity() == ConnectivityResult.none) {
+    final connectivityResults = await _connectivity.checkConnectivity();
+    if (connectivityResults
+        .every((result) => result == ConnectivityResult.none)) {
       debugPrint('📶 No internet - skipping sync');
       return;
     }
@@ -112,10 +117,10 @@ class SyncService {
     await performSync();
   }
 
-  String getLastSyncText() {
-    final time = getLastSyncTime();
+  Future<String> getLastSyncText() async {
+    final time = await getLastSyncTime();
     if (time == null) return 'Never synced';
-    final diff = DateTime.now().difference(time as DateTime);
+    final diff = DateTime.now().difference(time);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inHours < 1) return '${diff.inMinutes} min ago';
     if (diff.inDays < 1) return '${diff.inHours} hr ago';
@@ -124,5 +129,6 @@ class SyncService {
 
   void dispose() {
     _syncTimer?.cancel();
+    _connectivitySubscription?.cancel();
   }
 }
