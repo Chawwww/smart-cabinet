@@ -26,8 +26,7 @@ class ItemProvider extends ChangeNotifier {
   List<ItemModel> get favoriteItems =>
       _items.where((i) => i.isFavorite).toList();
 
-  List<ItemModel> get expiredItems =>
-      _items.where((i) => i.isExpired).toList();
+  List<ItemModel> get expiredItems => _items.where((i) => i.isExpired).toList();
 
   List<ItemModel> get expiringSoonItems =>
       _items.where((i) => i.isExpiringSoon && !i.isExpired).toList();
@@ -54,7 +53,8 @@ class ItemProvider extends ChangeNotifier {
         _items = [...localOnly, ...items];
         _error = null;
         _setLoading(false);
-        debugPrint('📦 Items loaded: ${items.length} (+${localOnly.length} pending)');
+        debugPrint(
+            '📦 Items loaded: ${items.length} (+${localOnly.length} pending)');
       },
       onError: (e) {
         _error = e.toString();
@@ -121,20 +121,23 @@ class ItemProvider extends ChangeNotifier {
     try {
       final docId = await _firestoreService.addItem(item);
       _error = null;
-      
+
       // ✅ IMPROVED: If we have a local version with same data, replace it
-      final localItem = _items.firstWhere(
-        (i) => _isLocalId(i.id) && i.name == item.name && i.createdAt == item.createdAt,
-        orElse: () => null as ItemModel,
+      final localMatches = _items.where(
+        (i) =>
+            _isLocalId(i.id) &&
+            i.name == item.name &&
+            i.createdAt == item.createdAt,
       );
-      
-      if (localItem != null && localItem.id != docId) {
+
+      if (localMatches.isNotEmpty && localMatches.first.id != docId) {
+        final localItem = localMatches.first;
         // Replace the local placeholder with the real document
         final realItem = item.copyWith(id: docId);
         _items[_items.indexOf(localItem)] = realItem;
         notifyListeners();
       }
-      
+
       return docId;
     } catch (e) {
       _error = e.toString();
@@ -272,10 +275,12 @@ class ItemProvider extends ChangeNotifier {
 
     if (searchQuery != null && searchQuery.trim().isNotEmpty) {
       final q = searchQuery.toLowerCase().trim();
-      result = result.where((item) =>
-          item.name.toLowerCase().contains(q) ||
-          (item.brand?.toLowerCase().contains(q) ?? false) ||
-          item.tags.any((t) => t.toLowerCase().contains(q))).toList();
+      result = result
+          .where((item) =>
+              item.name.toLowerCase().contains(q) ||
+              (item.brand?.toLowerCase().contains(q) ?? false) ||
+              item.tags.any((t) => t.toLowerCase().contains(q)))
+          .toList();
     }
 
     return result;

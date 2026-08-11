@@ -51,7 +51,7 @@ class _MenuScreenState extends State<MenuScreen> {
     context.read<CabinetProvider>()
       ..loadCabinets()
       ..loadBoxes();
-    
+
     final s = S.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -66,7 +66,7 @@ class _MenuScreenState extends State<MenuScreen> {
   void _showReports(BuildContext context) {
     final ip = context.read<ItemProvider>();
     final s = S.of(context);
-    
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -203,7 +203,7 @@ class _MenuScreenState extends State<MenuScreen> {
         ],
       ),
     );
-    
+
     if (confirm == true && context.mounted) {
       await context.read<AuthProvider>().logout();
       if (context.mounted) {
@@ -235,7 +235,6 @@ class _MenuScreenState extends State<MenuScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-
             // ── Profile card with Avatar ─────────────────────
             Card(
               elevation: 0,
@@ -260,7 +259,8 @@ class _MenuScreenState extends State<MenuScreen> {
                         ),
                       ),
                       child: ClipOval(
-                        child: (user?.avatar != null && user!.avatar!.isNotEmpty)
+                        child: (user?.avatar != null &&
+                                user!.avatar!.isNotEmpty)
                             ? Image.network(
                                 user.avatar!,
                                 width: 60,
@@ -268,8 +268,8 @@ class _MenuScreenState extends State<MenuScreen> {
                                 fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Center(
                                   child: Text(
-                                    user.name.isNotEmpty 
-                                        ? user.name[0].toUpperCase() 
+                                    user.name.isNotEmpty
+                                        ? user.name[0].toUpperCase()
                                         : (authProvider.isLoggedIn ? 'U' : 'G'),
                                     style: const TextStyle(
                                       color: Colors.white,
@@ -286,9 +286,13 @@ class _MenuScreenState extends State<MenuScreen> {
                                       height: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        value: loadingProgress.expectedTotalBytes != null
-                                            ? loadingProgress.cumulativeBytesLoaded /
-                                                loadingProgress.expectedTotalBytes!
+                                        value: loadingProgress
+                                                    .expectedTotalBytes !=
+                                                null
+                                            ? loadingProgress
+                                                    .cumulativeBytesLoaded /
+                                                loadingProgress
+                                                    .expectedTotalBytes!
                                             : null,
                                         color: Colors.white,
                                       ),
@@ -300,7 +304,9 @@ class _MenuScreenState extends State<MenuScreen> {
                                 child: Text(
                                   user != null && user.name.isNotEmpty
                                       ? user.name[0].toUpperCase()
-                                      : authProvider.isLoggedIn ? 'U' : 'G',
+                                      : authProvider.isLoggedIn
+                                          ? 'U'
+                                          : 'G',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 24,
@@ -316,7 +322,10 @@ class _MenuScreenState extends State<MenuScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user?.name ?? (authProvider.isLoggedIn ? s.name : s.guestUser),
+                            user?.name ??
+                                (authProvider.isLoggedIn
+                                    ? s.name
+                                    : s.guestUser),
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -324,7 +333,10 @@ class _MenuScreenState extends State<MenuScreen> {
                             ),
                           ),
                           Text(
-                            user?.email ?? (authProvider.isLoggedIn ? 'Logged In' : s.guestUser),
+                            user?.email ??
+                                (authProvider.isLoggedIn
+                                    ? 'Logged In'
+                                    : s.guestUser),
                             style: TextStyle(
                               fontSize: 14,
                               color: subColor,
@@ -334,12 +346,13 @@ class _MenuScreenState extends State<MenuScreen> {
                             Text(
                               '✓ Google Account',
                               style: TextStyle(
-                                fontSize: 12, 
+                                fontSize: 12,
                                 color: const Color(0xFF4ECDC4),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                          if (authProvider.isLoggedIn && user?.emailVerified == true)
+                          if (authProvider.isLoggedIn &&
+                              user?.emailVerified == true)
                             Text(
                               '✓ Verified',
                               style: TextStyle(
@@ -372,12 +385,12 @@ class _MenuScreenState extends State<MenuScreen> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 16),
 
             // ── Section: Account ────────────────────────────
             _sectionHeader(s.profile, textColor),
-            
+
             _menuItem(
               context,
               icon: Icons.person_outline,
@@ -418,9 +431,10 @@ class _MenuScreenState extends State<MenuScreen> {
               context,
               icon: Icons.cabin_outlined,
               title: 'Manage Cabinets',
-              subtitle: '${cabinetProvider.ownedCabinets.length} owned • ${cabinetProvider.sharedCabinets.length} shared',
-              badge: cabinetProvider.ownedCabinets.isNotEmpty 
-                  ? '${cabinetProvider.ownedCabinets.length}' 
+              subtitle:
+                  '${cabinetProvider.ownedCabinets.length} owned • ${cabinetProvider.sharedCabinets.length} shared',
+              badge: cabinetProvider.ownedCabinets.isNotEmpty
+                  ? '${cabinetProvider.ownedCabinets.length}'
                   : null,
               onTap: () => Navigator.push(
                 context,
@@ -549,9 +563,10 @@ class _MenuScreenState extends State<MenuScreen> {
               context,
               icon: Icons.people_outline,
               title: 'Shared Cabinets',
-              subtitle: '${cabinetProvider.sharedCabinets.length} cabinets shared with you',
-              badge: cabinetProvider.sharedCabinets.isNotEmpty 
-                  ? '${cabinetProvider.sharedCabinets.length}' 
+              subtitle:
+                  '${cabinetProvider.sharedCabinets.length} cabinets shared with you',
+              badge: cabinetProvider.sharedCabinets.isNotEmpty
+                  ? '${cabinetProvider.sharedCabinets.length}'
                   : null,
               onTap: () => Navigator.push(
                 context,
@@ -589,7 +604,8 @@ class _MenuScreenState extends State<MenuScreen> {
               context,
               icon: Icons.language,
               title: s.language,
-              subtitle: '${languageProvider.getCurrentLanguageFlag()} ${languageProvider.getCurrentLanguageName()}',
+              subtitle:
+                  '${languageProvider.getCurrentLanguageFlag()} ${languageProvider.getCurrentLanguageName()}',
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -690,35 +706,6 @@ class _MenuScreenState extends State<MenuScreen> {
                       fontWeight: FontWeight.w600,
                       color: textColor.withValues(alpha: 0.6),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'v1.0.0',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: subColor,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '💡 Powered by ',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: subColor,
-                        ),
-                      ),
-                      Text(
-                        'Gemini AI',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: const Color(0xFF4ECDC4),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
                   ),
                   const SizedBox(height: 20),
                 ],

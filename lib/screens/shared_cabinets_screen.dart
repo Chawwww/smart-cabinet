@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/cabinet_share_service.dart';
 import 'cabinet_detail_screen.dart';
 
 class SharedCabinetsScreen extends StatelessWidget {
@@ -12,13 +13,18 @@ class SharedCabinetsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final cabinetProvider = context.watch<CabinetProvider>();
     final authProvider = context.watch<AuthProvider>();
-    
+
     final sharedCabinets = cabinetProvider.sharedCabinets;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Shared Cabinets'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.group_add_outlined),
+            tooltip: 'Join invitation',
+            onPressed: () => _joinInvitation(context),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
@@ -59,7 +65,7 @@ class SharedCabinetsScreen extends StatelessWidget {
                 final cabinet = sharedCabinets[index];
                 final permission = cabinet.getPermission(authProvider.userId);
                 final textColor = Theme.of(context).colorScheme.onSurface;
-                
+
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   elevation: 2,
@@ -76,7 +82,7 @@ class SharedCabinetsScreen extends StatelessWidget {
                       ),
                       child: Center(
                         child: Text(
-                          cabinet.icon ?? '🗄️', 
+                          cabinet.icon ?? '🗄️',
                           style: const TextStyle(fontSize: 28),
                         ),
                       ),
@@ -95,7 +101,8 @@ class SharedCabinetsScreen extends StatelessWidget {
                       ),
                     ),
                     trailing: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: _getPermissionColor(permission),
                         borderRadius: BorderRadius.circular(8),
@@ -126,21 +133,70 @@ class SharedCabinetsScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _joinInvitation(BuildContext context) async {
+    final controller = TextEditingController();
+    final invite = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Join shared cabinet'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Invitation link or code',
+            hintText: 'smartcabinet://join?invite=...',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, controller.text),
+              child: const Text('Join')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (invite == null || invite.trim().isEmpty || !context.mounted) return;
+    try {
+      await CabinetShareService.instance.acceptInvite(invite);
+      if (!context.mounted) return;
+      context.read<CabinetProvider>().loadCabinets();
+      if (context.mounted)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Cabinet added to Shared Cabinets'),
+            backgroundColor: Colors.green));
+    } catch (error) {
+      if (context.mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Could not join invitation: $error'),
+            backgroundColor: Colors.red));
+    }
+  }
+
   String _getPermissionLabel(String permission) {
     switch (permission) {
-      case 'view': return 'View Only';
-      case 'edit': return 'Edit';
-      case 'admin': return 'Admin';
-      default: return 'View';
+      case 'view':
+        return 'View Only';
+      case 'edit':
+        return 'Edit';
+      case 'admin':
+        return 'Admin';
+      default:
+        return 'View';
     }
   }
 
   Color _getPermissionColor(String permission) {
     switch (permission) {
-      case 'view': return const Color(0xFF636E72);
-      case 'edit': return const Color(0xFF4ECDC4);
-      case 'admin': return const Color(0xFF6C5CE7);
-      default: return const Color(0xFF636E72);
+      case 'view':
+        return const Color(0xFF636E72);
+      case 'edit':
+        return const Color(0xFF4ECDC4);
+      case 'admin':
+        return const Color(0xFF6C5CE7);
+      default:
+        return const Color(0xFF636E72);
     }
   }
 }

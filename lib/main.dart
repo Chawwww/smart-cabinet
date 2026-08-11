@@ -30,7 +30,6 @@ import 'services/iot_service.dart';
 import 'themes/app_theme.dart';
 
 import 'models/item_model.dart';
-import 'models/cabinet_model.dart';
 
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -121,11 +120,9 @@ class SmartCabinetApp extends StatelessWidget {
           return MaterialApp(
             debugShowCheckedModeBanner: false,
             title: AppConstants.appName,
-
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
-
             locale: languageProvider.locale,
             supportedLocales: S.delegate.supportedLocales,
             localizationsDelegates: const [
@@ -134,7 +131,6 @@ class SmartCabinetApp extends StatelessWidget {
               GlobalCupertinoLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
             ],
-
             localeResolutionCallback: (locale, supportedLocales) {
               for (final supportedLocale in supportedLocales) {
                 if (supportedLocale.languageCode == locale?.languageCode) {
@@ -143,7 +139,6 @@ class SmartCabinetApp extends StatelessWidget {
               }
               return const Locale('en');
             },
-
             initialRoute: '/',
             routes: {
               '/': (context) => const SplashScreen(),
@@ -160,7 +155,8 @@ class SmartCabinetApp extends StatelessWidget {
               '/add-category': (context) => const AddEditCategoryScreen(),
               '/add-cabinet': (context) => const AddEditCabinetScreen(),
               '/manage-tags': (context) => TagManagementScreen(),
-              '/manage-cabinets': (context) => const ManageCabinetsScreen(), // ✅ ADDED
+              '/manage-cabinets': (context) =>
+                  const ManageCabinetsScreen(), // ✅ ADDED
               '/item-detail': (context) {
                 final args = ModalRoute.of(context)?.settings.arguments;
                 if (args is ItemModel) {
@@ -207,10 +203,12 @@ class SmartCabinetApp extends StatelessWidget {
               '/language-selector': (context) => const LanguageSelectorScreen(),
               '/forgot-password': (context) => const ForgotPasswordScreen(),
               '/medicine-info': (context) => const MedicineInfoScreen(),
-              '/smart-cabinet-control': (context) => const SmartCabinetControlScreen(),
+              '/smart-cabinet-control': (context) =>
+                  const SmartCabinetControlScreen(),
               '/workflows': (context) => const WorkflowsScreen(),
               '/door-status': (context) => const DoorStatusScreen(),
-              '/notification-settings': (context) => const NotificationSettingsScreen(),
+              '/notification-settings': (context) =>
+                  const NotificationSettingsScreen(),
             },
           );
         },

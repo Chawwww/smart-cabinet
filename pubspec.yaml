@@ -121,7 +121,10 @@ dependencies:
   flutter_launcher_icons: ^0.14.4
   firebase_database: ^12.4.4
   firebase_analytics: ^12.4.6
+  cloud_functions: ^6.0.7
+  record: ^6.1.2
   path: ^1.9.1
+  app_links: ^7.2.1
 
 dev_dependencies:
   flutter_test:

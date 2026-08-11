@@ -1,8 +1,12 @@
 // lib/screens/share_cabinet_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import '../providers/cabinet_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/cabinet_share_service.dart';
 
 class ShareCabinetScreen extends StatefulWidget {
   final String cabinetId;
@@ -55,10 +59,10 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
 
     try {
       final success = await context.read<CabinetProvider>().shareCabinet(
-        cabinetId: widget.cabinetId,
-        userEmail: email,
-        permission: _selectedPermission,
-      );
+            cabinetId: widget.cabinetId,
+            userEmail: email,
+            permission: _selectedPermission,
+          );
 
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -90,6 +94,54 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
     setState(() => _isLoading = false);
   }
 
+  Future<void> _createInvite() async {
+    setState(() => _isLoading = true);
+    try {
+      final link = await CabinetShareService.instance.createInvite(
+        cabinetId: widget.cabinetId,
+        permission: _selectedPermission,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Share invitation'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            QrImageView(data: link, size: 220),
+            const SizedBox(height: 12),
+            const Text('The invite expires in 7 days and can be used once.',
+                textAlign: TextAlign.center),
+            const SizedBox(height: 10),
+            SelectableText(link, textAlign: TextAlign.center),
+          ]),
+          actions: [
+            TextButton(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: link));
+                  if (dialogContext.mounted)
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(content: Text('Invite link copied')));
+                },
+                child: const Text('Copy link')),
+            TextButton(
+                onPressed: () => Share.share('Join my Smart Cabinet: $link'),
+                child: const Text('Share')),
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Done')),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Could not create invite: $error'),
+            backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Future<void> _revokeAccess(String userId, String userName) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -113,9 +165,9 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
     if (confirm != true) return;
 
     final success = await context.read<CabinetProvider>().revokeAccess(
-      cabinetId: widget.cabinetId,
-      userId: userId,
-    );
+          cabinetId: widget.cabinetId,
+          userId: userId,
+        );
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -128,17 +180,19 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
     }
   }
 
-  Future<void> _updatePermission(String userId, String userName, String newPermission) async {
+  Future<void> _updatePermission(
+      String userId, String userName, String newPermission) async {
     final success = await context.read<CabinetProvider>().updatePermission(
-      cabinetId: widget.cabinetId,
-      userId: userId,
-      newPermission: newPermission,
-    );
+          cabinetId: widget.cabinetId,
+          userId: userId,
+          newPermission: newPermission,
+        );
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ Updated $userName\'s permission to ${_getPermissionLabel(newPermission)}'),
+          content: Text(
+              '✅ Updated $userName\'s permission to ${_getPermissionLabel(newPermission)}'),
           backgroundColor: Colors.green,
         ),
       );
@@ -149,8 +203,9 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
-    final isOwner = _sharedUsers.any((u) => u['isOwner'] == true && u['id'] == authProvider.userId);
-    
+    final isOwner = _sharedUsers
+        .any((u) => u['isOwner'] == true && u['id'] == authProvider.userId);
+
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = textColor.withValues(alpha: 0.55);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -200,29 +255,34 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
                           ),
                           const SizedBox(height: 8),
                           ..._sharedUsers.map((user) => ListTile(
-                            dense: true,
-                            leading: CircleAvatar(
-                              backgroundColor: user['isOwner'] 
-                                  ? const Color(0xFF4ECDC4) 
-                                  : Colors.grey,
-                              radius: 14,
-                              child: Text(
-                                (user['name'] as String? ?? '?')[0].toUpperCase(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
+                                dense: true,
+                                leading: CircleAvatar(
+                                  backgroundColor: user['isOwner']
+                                      ? const Color(0xFF4ECDC4)
+                                      : Colors.grey,
+                                  radius: 14,
+                                  child: Text(
+                                    (user['name'] as String? ?? '?')[0]
+                                        .toUpperCase(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            title: Text(
-                              user['name'] ?? 'Unknown',
-                              style: TextStyle(fontSize: 14, color: textColor),
-                            ),
-                            subtitle: Text(
-                              user['isOwner'] ? '👑 Owner' : '${_getPermissionLabel(user['permission'])}',
-                              style: TextStyle(fontSize: 12, color: subColor),
-                            ),
-                          )),
+                                title: Text(
+                                  user['name'] ?? 'Unknown',
+                                  style:
+                                      TextStyle(fontSize: 14, color: textColor),
+                                ),
+                                subtitle: Text(
+                                  user['isOwner']
+                                      ? '👑 Owner'
+                                      : '${_getPermissionLabel(user['permission'])}',
+                                  style:
+                                      TextStyle(fontSize: 12, color: subColor),
+                                ),
+                              )),
                         ],
                       ),
                     ),
@@ -337,11 +397,18 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
                 ),
                 child: _isLoading
                     ? const SizedBox(
-                        width: 20, height: 20,
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('Share Cabinet'),
               ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _isLoading ? null : _createInvite,
+              icon: const Icon(Icons.qr_code_2),
+              label: const Text('Create link or QR invitation'),
             ),
             const SizedBox(height: 24),
 
@@ -355,87 +422,97 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            ..._sharedUsers.map((user) => Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: user['isOwner']
-                      ? const Color(0xFF4ECDC4)
-                      : Colors.grey,
-                  child: Text(
-                    (user['name'] as String? ?? '?')[0].toUpperCase(),
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-                title: Text(
-                  user['name'] ?? 'Unknown',
-                  style: TextStyle(color: textColor),
-                ),
-                subtitle: Text(
-                  user['email'] ?? '',
-                  style: TextStyle(fontSize: 12, color: subColor),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!(user['isOwner'] ?? false)) ...[
-                      // Permission dropdown for shared users
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: DropdownButton<String>(
-                          value: user['permission'] ?? 'view',
-                          items: const [
-                            DropdownMenuItem(value: 'view', child: Text('👁️')),
-                            DropdownMenuItem(value: 'edit', child: Text('✏️')),
-                            DropdownMenuItem(value: 'admin', child: Text('👑')),
-                          ],
-                          onChanged: (newPerm) {
-                            if (newPerm != null) {
-                              _updatePermission(
-                                user['id'],
-                                user['name'] ?? 'Unknown',
-                                newPerm,
-                              );
-                            }
-                          },
-                          underline: const SizedBox.shrink(),
-                          icon: const Icon(Icons.arrow_drop_down, size: 18),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.red, size: 18),
-                        onPressed: () => _revokeAccess(
-                          user['id'],
-                          user['name'] ?? 'Unknown',
-                        ),
-                        tooltip: 'Revoke access',
-                      ),
-                    ] else ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF4ECDC4),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Owner',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+            ..._sharedUsers
+                .map((user) => Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: user['isOwner']
+                              ? const Color(0xFF4ECDC4)
+                              : Colors.grey,
+                          child: Text(
+                            (user['name'] as String? ?? '?')[0].toUpperCase(),
+                            style: const TextStyle(color: Colors.white),
                           ),
                         ),
+                        title: Text(
+                          user['name'] ?? 'Unknown',
+                          style: TextStyle(color: textColor),
+                        ),
+                        subtitle: Text(
+                          user['email'] ?? '',
+                          style: TextStyle(fontSize: 12, color: subColor),
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!(user['isOwner'] ?? false)) ...[
+                              // Permission dropdown for shared users
+                              Container(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                decoration: BoxDecoration(
+                                  border:
+                                      Border.all(color: Colors.grey.shade300),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: DropdownButton<String>(
+                                  value: user['permission'] ?? 'view',
+                                  items: const [
+                                    DropdownMenuItem(
+                                        value: 'view', child: Text('👁️')),
+                                    DropdownMenuItem(
+                                        value: 'edit', child: Text('✏️')),
+                                    DropdownMenuItem(
+                                        value: 'admin', child: Text('👑')),
+                                  ],
+                                  onChanged: (newPerm) {
+                                    if (newPerm != null) {
+                                      _updatePermission(
+                                        user['id'],
+                                        user['name'] ?? 'Unknown',
+                                        newPerm,
+                                      );
+                                    }
+                                  },
+                                  underline: const SizedBox.shrink(),
+                                  icon: const Icon(Icons.arrow_drop_down,
+                                      size: 18),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: const Icon(Icons.close,
+                                    color: Colors.red, size: 18),
+                                onPressed: () => _revokeAccess(
+                                  user['id'],
+                                  user['name'] ?? 'Unknown',
+                                ),
+                                tooltip: 'Revoke access',
+                              ),
+                            ] else ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4ECDC4),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  'Owner',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                    ],
-                  ],
-                ),
-              ),
-            )).toList(),
+                    ))
+                .toList(),
 
             if (_sharedUsers.isEmpty)
               Center(
@@ -455,19 +532,27 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
 
   String _getPermissionLabel(String? permission) {
     switch (permission) {
-      case 'view': return 'View Only';
-      case 'edit': return 'Edit';
-      case 'admin': return 'Admin';
-      default: return 'View';
+      case 'view':
+        return 'View Only';
+      case 'edit':
+        return 'Edit';
+      case 'admin':
+        return 'Admin';
+      default:
+        return 'View';
     }
   }
 
   Color _getPermissionColor(String? permission) {
     switch (permission) {
-      case 'view': return const Color(0xFF636E72);
-      case 'edit': return const Color(0xFF4ECDC4);
-      case 'admin': return const Color(0xFF6C5CE7);
-      default: return const Color(0xFF636E72);
+      case 'view':
+        return const Color(0xFF636E72);
+      case 'edit':
+        return const Color(0xFF4ECDC4);
+      case 'admin':
+        return const Color(0xFF6C5CE7);
+      default:
+        return const Color(0xFF636E72);
     }
   }
 }

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/box_model.dart';
 import '../models/cabinet_model.dart';
+import '../services/cabinet_share_service.dart';
 import '../services/firestore_service.dart';
 
 class CabinetProvider extends ChangeNotifier {
@@ -15,7 +16,7 @@ class CabinetProvider extends ChangeNotifier {
   List<BoxModel> _boxes = [];
   bool _isLoading = false;
   String? _error;
-  
+
   StreamSubscription? _cabinetSubscription;
   StreamSubscription? _boxSubscription;
 
@@ -30,21 +31,18 @@ class CabinetProvider extends ChangeNotifier {
   String get userId => _auth.currentUser?.uid ?? '';
 
   List<CabinetModel> get accessibleCabinets {
-    return _cabinets.where((cabinet) => 
-      cabinet.hasAccess(userId)
-    ).toList();
+    return _cabinets.where((cabinet) => cabinet.hasAccess(userId)).toList();
   }
 
   List<CabinetModel> get ownedCabinets {
-    return _cabinets.where((cabinet) => 
-      cabinet.userId == userId
-    ).toList();
+    return _cabinets.where((cabinet) => cabinet.userId == userId).toList();
   }
 
   List<CabinetModel> get sharedCabinets {
-    return _cabinets.where((cabinet) => 
-      cabinet.userId != userId && cabinet.hasAccess(userId)
-    ).toList();
+    return _cabinets
+        .where(
+            (cabinet) => cabinet.userId != userId && cabinet.hasAccess(userId))
+        .toList();
   }
 
   // ── Load Cabinets ───────────────────────────────────────
@@ -57,7 +55,8 @@ class CabinetProvider extends ChangeNotifier {
         _cabinets = cabinets;
         _error = null;
         _setLoading(false);
-        debugPrint('🗄️ Cabinets loaded: ${cabinets.length} (${accessibleCabinets.length} accessible)');
+        debugPrint(
+            '🗄️ Cabinets loaded: ${cabinets.length} (${accessibleCabinets.length} accessible)');
       },
       onError: (error) {
         _error = error.toString();
@@ -72,9 +71,9 @@ class CabinetProvider extends ChangeNotifier {
     _cabinetSubscription?.cancel();
     _cabinetSubscription = null;
     _cabinets = [];
-    
+
     final completer = Completer<void>();
-    
+
     // Create new subscription
     _cabinetSubscription = _firestoreService.getCabinets().listen(
       (cabinets) {
@@ -94,7 +93,7 @@ class CabinetProvider extends ChangeNotifier {
         }
       },
     );
-    
+
     // Timeout fallback
     return completer.future.timeout(
       const Duration(seconds: 5),
@@ -128,9 +127,9 @@ class CabinetProvider extends ChangeNotifier {
     _boxSubscription?.cancel();
     _boxSubscription = null;
     _boxes = [];
-    
+
     final completer = Completer<void>();
-    
+
     // Create new subscription
     _boxSubscription = _firestoreService.getBoxes().listen(
       (boxes) {
@@ -148,7 +147,7 @@ class CabinetProvider extends ChangeNotifier {
         }
       },
     );
-    
+
     // Timeout fallback
     return completer.future.timeout(
       const Duration(seconds: 5),
@@ -263,48 +262,13 @@ class CabinetProvider extends ChangeNotifier {
   }) async {
     try {
       _setLoading(true);
-      
-      final userSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('email', isEqualTo: userEmail.trim())
-          .limit(1)
-          .get();
 
-      if (userSnapshot.docs.isEmpty) {
-        throw Exception('User with email "$userEmail" not found');
-      }
-
-      final sharedUserId = userSnapshot.docs.first.id;
-
-      if (sharedUserId == userId) {
-        throw Exception('You cannot share with yourself');
-      }
-
-      final cabinet = getCabinetById(cabinetId);
-      if (cabinet == null) throw Exception('Cabinet not found');
-
-      if (cabinet.sharedWith.contains(sharedUserId)) {
-        throw Exception('Already shared with this user');
-      }
-
-      final updatedCabinet = cabinet.copyWith(
-        sharedWith: [...cabinet.sharedWith, sharedUserId],
-        permissions: {
-          ...cabinet.permissions,
-          sharedUserId: permission,
-        },
-        updatedAt: DateTime.now(),
-      );
-
-      await updateCabinet(updatedCabinet);
-
-      await _createNotification(
-        userId: sharedUserId,
-        title: '📂 Cabinet Shared',
-        body: '${_auth.currentUser?.displayName ?? 'Someone'} shared "${cabinet.name}" with you',
-        type: 'share',
+      await CabinetShareService.instance.shareByEmail(
         cabinetId: cabinetId,
+        email: userEmail,
+        permission: permission,
       );
+      loadCabinets();
 
       _error = null;
       _setLoading(false);
@@ -379,13 +343,11 @@ class CabinetProvider extends ChangeNotifier {
 
     final users = <Map<String, dynamic>>[];
     final userIds = [cabinet.userId, ...cabinet.sharedWith];
-    
+
     for (final uid in userIds) {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
-      
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+
       if (doc.exists) {
         users.add({
           'id': uid,
@@ -396,7 +358,7 @@ class CabinetProvider extends ChangeNotifier {
         });
       }
     }
-    
+
     return users;
   }
 

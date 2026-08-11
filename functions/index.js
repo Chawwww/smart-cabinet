@@ -11,14 +11,130 @@
 
 const { onValueCreated } = require("firebase-functions/v2/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
+const { SpeechClient } = require("@google-cloud/speech");
 
 initializeApp();
 const db = getFirestore();
+let speech;
+
+function getSpeechClient() {
+  speech ??= new SpeechClient();
+  return speech;
+}
 
 const DEFAULT_EXPIRY_ALERT_DAYS = 7;
+
+function requireAuth(request) {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in is required.");
+  return request.auth.uid;
+}
+
+function requirePermission(permission) {
+  if (!["view", "edit", "admin"].includes(permission)) {
+    throw new HttpsError("invalid-argument", "Invalid cabinet permission.");
+  }
+}
+
+async function addCabinetMember(cabinetId, ownerId, memberId, permission) {
+  const ref = db.collection("cabinets").doc(cabinetId);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new HttpsError("not-found", "Cabinet not found.");
+    const cabinet = snapshot.data();
+    if (cabinet.userId !== ownerId) throw new HttpsError("permission-denied", "Only the owner can share this cabinet.");
+    transaction.update(ref, {
+      sharedWith: FieldValue.arrayUnion([memberId]),
+      [`permissions.${memberId}`]: permission,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+}
+
+exports.shareCabinetByEmail = onCall({ region: "us-central1" }, async (request) => {
+  const ownerId = requireAuth(request);
+  const { cabinetId, email, permission = "view" } = request.data || {};
+  if (typeof cabinetId !== "string" || typeof email !== "string") {
+    throw new HttpsError("invalid-argument", "Cabinet ID and email are required.");
+  }
+  requirePermission(permission);
+  const users = await db.collection("users").where("email", "==", email.trim().toLowerCase()).limit(1).get();
+  if (users.empty) throw new HttpsError("not-found", "No account exists for this email address.");
+  const memberId = users.docs[0].id;
+  if (memberId === ownerId) throw new HttpsError("failed-precondition", "You cannot share with yourself.");
+  await addCabinetMember(cabinetId, ownerId, memberId, permission);
+  await sendPushAndLog(memberId, "📂 Cabinet Shared", "A cabinet was shared with you.", { type: "share", cabinetId });
+  return { memberId };
+});
+
+exports.createCabinetInvite = onCall({ region: "us-central1" }, async (request) => {
+  const ownerId = requireAuth(request);
+  const { cabinetId, permission = "view" } = request.data || {};
+  if (typeof cabinetId !== "string") throw new HttpsError("invalid-argument", "Cabinet ID is required.");
+  requirePermission(permission);
+  const cabinet = await db.collection("cabinets").doc(cabinetId).get();
+  if (!cabinet.exists || cabinet.data().userId !== ownerId) throw new HttpsError("permission-denied", "Only the owner can create an invite.");
+  const invite = db.collection("cabinet_invites").doc();
+  await invite.set({ cabinetId, ownerId, permission, createdAt: FieldValue.serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000), acceptedBy: null });
+  return { inviteId: invite.id, link: `smartcabinet://join?invite=${invite.id}` };
+});
+
+exports.acceptCabinetInvite = onCall({ region: "us-central1" }, async (request) => {
+  const memberId = requireAuth(request);
+  const { inviteId } = request.data || {};
+  if (typeof inviteId !== "string") throw new HttpsError("invalid-argument", "Invite code is required.");
+  const inviteRef = db.collection("cabinet_invites").doc(inviteId);
+  await db.runTransaction(async (transaction) => {
+    const inviteSnap = await transaction.get(inviteRef);
+    if (!inviteSnap.exists) throw new HttpsError("not-found", "Invite not found.");
+    const invite = inviteSnap.data();
+    if (invite.acceptedBy) throw new HttpsError("failed-precondition", "This invite was already used.");
+    if (invite.expiresAt.toMillis() < Date.now()) throw new HttpsError("deadline-exceeded", "This invite has expired.");
+    if (invite.ownerId === memberId) throw new HttpsError("failed-precondition", "You already own this cabinet.");
+    const cabinetRef = db.collection("cabinets").doc(invite.cabinetId);
+    const cabinetSnap = await transaction.get(cabinetRef);
+    if (!cabinetSnap.exists || cabinetSnap.data().userId !== invite.ownerId) throw new HttpsError("not-found", "Cabinet is unavailable.");
+    transaction.update(cabinetRef, { sharedWith: FieldValue.arrayUnion([memberId]), [`permissions.${memberId}`]: invite.permission, updatedAt: FieldValue.serverTimestamp() });
+    transaction.update(inviteRef, { acceptedBy: memberId, acceptedAt: FieldValue.serverTimestamp() });
+  });
+  return { success: true };
+});
+
+// Short mobile recordings are transcribed on the server so users do not need
+// to install an on-device Chinese or Malay recognition pack.
+exports.transcribeVoice = onCall(
+  { region: "asia-southeast1", timeoutSeconds: 60, memory: "512MiB" },
+  async (request) => {
+    requireAuth(request);
+    const { audioBase64, languageCode = "en" } = request.data || {};
+    if (typeof audioBase64 !== "string" || audioBase64.length === 0) {
+      throw new HttpsError("invalid-argument", "Audio is required.");
+    }
+    // Callable requests have size limits; keep clips short and reject large data.
+    if (audioBase64.length > 8 * 1024 * 1024) {
+      throw new HttpsError("invalid-argument", "Voice recording is too large. Keep it under 30 seconds.");
+    }
+    const localeByLanguage = { en: "en-US", zh: "cmn-Hans-CN", ms: "ms-MY" };
+    const languageCodeForRequest = localeByLanguage[languageCode] || "en-US";
+    const [response] = await getSpeechClient().recognize({
+      config: {
+        encoding: "LINEAR16",
+        sampleRateHertz: 16000,
+        languageCode: languageCodeForRequest,
+        enableAutomaticPunctuation: true,
+      },
+      audio: { content: audioBase64 },
+    });
+    const transcript = (response.results || [])
+      .map((result) => result.alternatives?.[0]?.transcript || "")
+      .join(" ")
+      .trim();
+    return { transcript };
+  }
+);
 
 // ═══════════════════════════════════════════════════════
 // Shared helper: write a Firestore notification doc AND

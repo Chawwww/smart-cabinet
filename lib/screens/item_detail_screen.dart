@@ -31,6 +31,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     with SingleTickerProviderStateMixin {
   late ItemModel _item;
   late TabController _tabs;
+  ItemProvider? _itemProvider;
   final _photoPageController = PageController();
   int _photoIndex = 0;
   bool _isSaving = false;
@@ -63,6 +64,8 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     }
 
     _item = widget.item!;
+    _itemProvider = context.read<ItemProvider>()
+      ..addListener(_syncItemFromProvider);
     _tabs = TabController(length: 3, vsync: this);
     _isInitialized = true;
     AIService().initialize();
@@ -70,9 +73,20 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
 
   @override
   void dispose() {
+    _itemProvider?.removeListener(_syncItemFromProvider);
     _tabs.dispose();
     _photoPageController.dispose();
     super.dispose();
+  }
+
+  void _syncItemFromProvider() {
+    if (!_isInitialized || _item.id == null) return;
+    final syncedItem = _itemProvider?.getItemById(_item.id!);
+    if (syncedItem != null &&
+        syncedItem.updatedAt != _item.updatedAt &&
+        mounted) {
+      setState(() => _item = syncedItem);
+    }
   }
 
   // ════════════════════════════════════════════
@@ -447,16 +461,16 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
     if (!_isInitialized) return;
 
     setState(() => _isSaving = true);
-    final now = DateTime.now();
-    final updated = _item.copyWith(
-      quantity: _item.quantity + 1,
-      status: 'inside',
-      updatedAt: now,
-    );
-    setState(() => _item = updated);
-    await context.read<ItemProvider>().updateItem(updated);
+    final success = await context.read<ItemProvider>().returnItem(_item);
+    if (!mounted) return;
+    final syncedItem = context.read<ItemProvider>().getItemById(_item.id!);
+    if (success && syncedItem != null) {
+      setState(() => _item = syncedItem);
+      _showSnack('✅ Returned 1 ${_item.unit}');
+    } else {
+      _showSnack('Could not return item. Please try again.');
+    }
     setState(() => _isSaving = false);
-    _showSnack('✅ Returned 1 ${_item.unit}');
   }
 
   Future<void> _toggleFavourite() async {

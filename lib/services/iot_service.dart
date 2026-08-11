@@ -40,6 +40,7 @@ class IoTService {
   String? _connectedDeviceId;
   bool _isConnected = false;
   bool _isScanning = false;
+  bool _isDisconnecting = false;
 
   List<DiscoveredDevice> _discoveredDevices = [];
 
@@ -87,16 +88,16 @@ class IoTService {
       Permission.locationWhenInUse,
       Permission.locationAlways,
     ];
-    
+
     final results = await permissions.request();
-    
+
     // Check which permissions were granted
     for (final entry in results.entries) {
       print('📱 Permission ${entry.key}: ${entry.value}');
     }
-    
+
     final allGranted = results.values.every((status) => status.isGranted);
-    
+
     if (!allGranted) {
       print('⚠️ Some permissions were denied');
     } else {
@@ -136,9 +137,8 @@ class IoTService {
     Future.delayed(const Duration(seconds: 10), () {
       if (_isScanning) {
         stopScan();
-        _connectionStatusController.add(
-          "Scan complete. Found ${_discoveredDevices.length} devices."
-        );
+        _connectionStatusController
+            .add("Scan complete. Found ${_discoveredDevices.length} devices.");
         print('✅ Scan complete. Found ${_discoveredDevices.length} devices.');
       }
     });
@@ -155,10 +155,16 @@ class IoTService {
   Future<bool> connectToDevice(String deviceId) async {
     print('🔗 Connecting to device: $deviceId');
     try {
-      _connectionSubscription = _ble.connectToDevice(
+      if (_isConnected || _connectionSubscription != null) {
+        await disconnect();
+      }
+      await stopScan();
+      _connectionSubscription = _ble
+          .connectToDevice(
         id: deviceId,
         connectionTimeout: const Duration(seconds: 20),
-      ).listen(
+      )
+          .listen(
         (update) {
           print('📡 Connection state: ${update.connectionState}');
           if (update.connectionState == DeviceConnectionState.connected) {
@@ -172,9 +178,7 @@ class IoTService {
           }
 
           if (update.connectionState == DeviceConnectionState.disconnected) {
-            _connectedDeviceId = null;
-            _isConnected = false;
-            _connectionStatusController.add("Disconnected");
+            _handleDisconnected();
           }
         },
         onError: (e) => _connectionStatusController.add("Connection error: $e"),
@@ -188,17 +192,40 @@ class IoTService {
   }
 
   Future<void> disconnect() async {
-    await _connectionSubscription?.cancel();
+    if (_isDisconnecting) return;
+    _isDisconnecting = true;
+    final deviceId = _connectedDeviceId;
+    try {
+      await stopScan();
+      await _upperDoorSubscription?.cancel();
+      await _lowerDoorSubscription?.cancel();
+      await _connectionSubscription?.cancel();
+      if (deviceId != null) await _ble.clearGattCache(deviceId);
+    } finally {
+      _upperDoorSubscription = null;
+      _lowerDoorSubscription = null;
+      _connectionSubscription = null;
+      _connectedDeviceId = null;
+      _isConnected = false;
+      _upperDoorOpen = false;
+      _lowerDoorOpen = false;
+      _isDisconnecting = false;
+      _connectionStatusController.add('Disconnected');
+    }
+  }
+
+  Future<void> _handleDisconnected() async {
+    if (_isDisconnecting) return;
     await _upperDoorSubscription?.cancel();
     await _lowerDoorSubscription?.cancel();
-
-    if (_connectedDeviceId != null) {
-      await _ble.clearGattCache(_connectedDeviceId!);
-    }
-
+    _upperDoorSubscription = null;
+    _lowerDoorSubscription = null;
+    _connectionSubscription = null;
     _connectedDeviceId = null;
     _isConnected = false;
-    _connectionStatusController.add("Disconnected");
+    _upperDoorOpen = false;
+    _lowerDoorOpen = false;
+    _connectionStatusController.add('Disconnected');
   }
 
   // ──────────────────────────────────────────────
@@ -242,8 +269,8 @@ class IoTService {
           "time": DateTime.now(),
         });
       },
-      onError: (e) => _connectionStatusController.add(
-          "${door.label} sensor error: $e"),
+      onError: (e) =>
+          _connectionStatusController.add("${door.label} sensor error: $e"),
     );
 
     if (door == CabinetDoor.upper) {

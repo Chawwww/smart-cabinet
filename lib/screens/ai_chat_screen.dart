@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../providers/item_provider.dart';
 import '../services/ai_service.dart';
+import '../providers/language_provider.dart';
+import '../widgets/voice_text_field.dart';
 
 // ════════════════════════════════════════════
 // Message model
@@ -152,8 +154,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
     if (_isLoading || !_aiReady) return;
 
     final itemProvider = context.read<ItemProvider>();
-    final itemNames =
-        itemProvider.items.map((i) => i.name).toList();
+    final itemNames = itemProvider.items.map((i) => i.name).toList();
 
     if (itemNames.isEmpty) {
       _addBotMessage(
@@ -171,7 +172,11 @@ class _AIChatScreenState extends State<AIChatScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final response = await _aiService.chat(prompt);
+      final language =
+          context.read<LanguageProvider>().getCurrentLanguageName();
+      final response = await _aiService.chat(
+        'Reply in $language unless the user explicitly requests another language.\n\n$prompt',
+      );
       _addBotMessage(response);
     } catch (e) {
       _addBotMessage('⚠️ Something went wrong: $e');
@@ -185,6 +190,8 @@ class _AIChatScreenState extends State<AIChatScreen> {
   // ════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = screenWidth >= 700 ? 32.0 : 12.0;
     return Scaffold(
       backgroundColor: const Color(0xFFF2FFFF),
       appBar: AppBar(
@@ -214,13 +221,6 @@ class _AIChatScreenState extends State<AIChatScreen> {
                     fontSize: 16,
                   ),
                 ),
-                Text(
-                  'Powered by Gemini AI',
-                  style: TextStyle(
-                    color: Color(0xFF636E72),
-                    fontSize: 11,
-                  ),
-                ),
               ],
             ),
           ],
@@ -235,126 +235,139 @@ class _AIChatScreenState extends State<AIChatScreen> {
             tooltip: 'Clear chat',
             onPressed: () => setState(() {
               _messages.clear();
-              _addBotMessage(
-                  '🧹 Chat cleared. How can I help you today?');
+              _addBotMessage('🧹 Chat cleared. How can I help you today?');
             }),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // ── Message list ───────────────────────
-          Expanded(
-            child: _messages.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    itemCount: _messages.length + (_isLoading ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == _messages.length) {
-                        return _TypingIndicator();
-                      }
-                      return _MessageBubble(message: _messages[index]);
-                    },
-                  ),
-          ),
-
-          // ── Quick action chips ─────────────────
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: _quickActions.map((action) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ActionChip(
-                      avatar: Icon(action.icon,
-                          size: 16, color: const Color(0xFF4ECDC4)),
-                      label: Text(
-                        action.label,
-                        style: const TextStyle(
-                            fontSize: 12, color: Color(0xFF2D3436)),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1000),
+          child: Column(
+            children: [
+              // ── Message list ───────────────────────
+              Expanded(
+                child: _messages.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: EdgeInsets.symmetric(
+                            horizontal: horizontalPadding, vertical: 12),
+                        itemCount: _messages.length + (_isLoading ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == _messages.length) {
+                            return _TypingIndicator();
+                          }
+                          return _MessageBubble(message: _messages[index]);
+                        },
                       ),
-                      backgroundColor: const Color(0xFF4ECDC4)
-                          .withValues(alpha: 0.1),
-                      side: BorderSide(
-                          color: const Color(0xFF4ECDC4)
-                              .withValues(alpha: 0.4)),
-                      onPressed: () => _runQuickAction(action),
-                    ),
-                  );
-                }).toList(),
               ),
-            ),
-          ),
 
-          // ── Input field ────────────────────────
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
-            color: Colors.white,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF2FFFF),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                          color: const Color(0xFF4ECDC4)
-                              .withValues(alpha: 0.4)),
-                    ),
-                    child: TextField(
-                      controller: _messageController,
-                      maxLines: null,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendMessage(),
-                      decoration: const InputDecoration(
-                        hintText: 'Ask me anything...',
-                        hintStyle:
-                            TextStyle(color: Color(0xFFB2BEC3)),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+              // ── Quick action chips ─────────────────
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: _quickActions.map((action) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          avatar: Icon(action.icon,
+                              size: 16, color: const Color(0xFF4ECDC4)),
+                          label: Text(
+                            action.label,
+                            style: const TextStyle(
+                                fontSize: 12, color: Color(0xFF2D3436)),
+                          ),
+                          backgroundColor:
+                              const Color(0xFF4ECDC4).withValues(alpha: 0.1),
+                          side: BorderSide(
+                              color: const Color(0xFF4ECDC4)
+                                  .withValues(alpha: 0.4)),
+                          onPressed: () => _runQuickAction(action),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+
+              // ── Input field ────────────────────────
+              Container(
+                padding: EdgeInsets.fromLTRB(
+                    horizontalPadding, 8, horizontalPadding, 16),
+                color: Colors.white,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF2FFFF),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                              color: const Color(0xFF4ECDC4)
+                                  .withValues(alpha: 0.4)),
+                        ),
+                        child: TextField(
+                          controller: _messageController,
+                          maxLines: null,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _sendMessage(),
+                          decoration: const InputDecoration(
+                            hintText: 'Ask me anything...',
+                            hintStyle: TextStyle(color: Color(0xFFB2BEC3)),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _isLoading ? null : _sendMessage,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: _isLoading
-                          ? Colors.grey.shade300
-                          : const Color(0xFF4ECDC4),
-                      borderRadius: BorderRadius.circular(23),
+                    const SizedBox(width: 8),
+                    VoiceInputWidget(
+                      iconSize: 22,
+                      onResult: (text) {
+                        _messageController.text = text;
+                        _messageController.selection =
+                            TextSelection.collapsed(offset: text.length);
+                      },
                     ),
-                    child: _isLoading
-                        ? const Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            ),
-                          )
-                        : const Icon(Icons.send_rounded,
-                            color: Colors.white, size: 20),
-                  ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _isLoading ? null : _sendMessage,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: _isLoading
+                              ? Colors.grey.shade300
+                              : const Color(0xFF4ECDC4),
+                          borderRadius: BorderRadius.circular(23),
+                        ),
+                        child: _isLoading
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              )
+                            : const Icon(Icons.send_rounded,
+                                color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -433,19 +446,14 @@ class _MessageBubble extends StatelessWidget {
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: isUser
-                    ? const Color(0xFF4ECDC4)
-                    : Colors.white,
+                color: isUser ? const Color(0xFF4ECDC4) : Colors.white,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
-                  bottomLeft:
-                      Radius.circular(isUser ? 16 : 4),
-                  bottomRight:
-                      Radius.circular(isUser ? 4 : 16),
+                  bottomLeft: Radius.circular(isUser ? 16 : 4),
+                  bottomRight: Radius.circular(isUser ? 4 : 16),
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -458,9 +466,7 @@ class _MessageBubble extends StatelessWidget {
               child: Text(
                 message.text,
                 style: TextStyle(
-                  color: isUser
-                      ? Colors.white
-                      : const Color(0xFF2D3436),
+                  color: isUser ? Colors.white : const Color(0xFF2D3436),
                   fontSize: 14,
                   height: 1.5,
                 ),
@@ -541,15 +547,12 @@ class _TypingIndicatorState extends State<_TypingIndicator>
               builder: (_, __) {
                 return Row(
                   children: List.generate(3, (i) {
-                    final offset =
-                        ((_ctrl.value * 3 - i).clamp(0.0, 1.0));
-                    final bounce =
-                        offset < 0.5 ? offset * 2 : (1 - offset) * 2;
+                    final offset = ((_ctrl.value * 3 - i).clamp(0.0, 1.0));
+                    final bounce = offset < 0.5 ? offset * 2 : (1 - offset) * 2;
                     return Transform.translate(
                       offset: Offset(0, -4 * bounce),
                       child: Padding(
-                        padding:
-                            EdgeInsets.only(right: i < 2 ? 4 : 0),
+                        padding: EdgeInsets.only(right: i < 2 ? 4 : 0),
                         child: Container(
                           width: 7,
                           height: 7,
