@@ -122,7 +122,7 @@ dependencies:
   firebase_database: ^12.4.4
   firebase_analytics: ^12.4.6
   cloud_functions: ^6.0.7
-  record: ^6.1.2
+  record: ^7.1.1
   path: ^1.9.1
   app_links: ^7.2.1
 

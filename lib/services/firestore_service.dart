@@ -26,11 +26,11 @@ class FirestoreService {
         .doc(userId)
         .snapshots()
         .map((doc) {
-          if (doc.exists) {
-            return UserModel.fromMap(doc.data()!, doc.id);
-          }
-          return null;
-        });
+      if (doc.exists) {
+        return UserModel.fromMap(doc.data()!, doc.id);
+      }
+      return null;
+    });
   }
 
   Future<void> updateUserProfile({
@@ -50,7 +50,8 @@ class FirestoreService {
 
     if (name != null) updates['name'] = name;
     if (avatar != null) updates['avatar'] = avatar;
-    if (dateOfBirth != null) updates['dateOfBirth'] = Timestamp.fromDate(dateOfBirth);
+    if (dateOfBirth != null)
+      updates['dateOfBirth'] = Timestamp.fromDate(dateOfBirth);
     if (bio != null) updates['bio'] = bio;
     if (interests != null) updates['interests'] = interests;
     if (isPublic != null) updates['isPublic'] = isPublic;
@@ -110,18 +111,18 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .listen(
-          (snapshot) {
-            ownedCabinets = snapshot.docs
-                .map((doc) => CabinetModel.fromFirestore(doc))
-                .toList();
-            ownedLoaded = true;
-            checkAndEmit();
-          },
-          onError: (error) {
-            ownedLoaded = true;
-            checkAndEmit();
-          },
-        );
+      (snapshot) {
+        ownedCabinets = snapshot.docs
+            .map((doc) => CabinetModel.fromFirestore(doc))
+            .toList();
+        ownedLoaded = true;
+        checkAndEmit();
+      },
+      onError: (error) {
+        ownedLoaded = true;
+        checkAndEmit();
+      },
+    );
 
     // Listen to shared cabinets
     _firestore
@@ -130,18 +131,18 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .listen(
-          (snapshot) {
-            sharedCabinets = snapshot.docs
-                .map((doc) => CabinetModel.fromFirestore(doc))
-                .toList();
-            sharedLoaded = true;
-            checkAndEmit();
-          },
-          onError: (error) {
-            sharedLoaded = true;
-            checkAndEmit();
-          },
-        );
+      (snapshot) {
+        sharedCabinets = snapshot.docs
+            .map((doc) => CabinetModel.fromFirestore(doc))
+            .toList();
+        sharedLoaded = true;
+        checkAndEmit();
+      },
+      onError: (error) {
+        sharedLoaded = true;
+        checkAndEmit();
+      },
+    );
 
     return controller.stream;
   }
@@ -158,10 +159,10 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => CabinetModel.fromFirestore(doc))
-              .toList();
-        });
+      return snapshot.docs
+          .map((doc) => CabinetModel.fromFirestore(doc))
+          .toList();
+    });
   }
 
   Stream<List<CabinetModel>> getSharedCabinets() {
@@ -175,16 +176,14 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => CabinetModel.fromFirestore(doc))
-              .toList();
-        });
+      return snapshot.docs
+          .map((doc) => CabinetModel.fromFirestore(doc))
+          .toList();
+    });
   }
 
   Future<void> addCabinet(CabinetModel cabinet) async {
-    final doc = _firestore
-        .collection(AppConstants.cabinetsCollection)
-        .doc();
+    final doc = _firestore.collection(AppConstants.cabinetsCollection).doc();
 
     final data = cabinet.copyWith(id: doc.id).toFirestore();
     await doc.set(data);
@@ -226,9 +225,9 @@ class FirestoreService {
         .collection(AppConstants.cabinetsCollection)
         .doc(cabinetId)
         .update({
-          'sharedWith': FieldValue.arrayUnion([sharedWithUserId]),
-          'permissions.${sharedWithUserId}': permission,
-        });
+      'sharedWith': FieldValue.arrayUnion([sharedWithUserId]),
+      'permissions.${sharedWithUserId}': permission,
+    });
   }
 
   Future<void> revokeShare(String cabinetId, String userId) async {
@@ -236,9 +235,9 @@ class FirestoreService {
         .collection(AppConstants.cabinetsCollection)
         .doc(cabinetId)
         .update({
-          'sharedWith': FieldValue.arrayRemove([userId]),
-          'permissions.${userId}': FieldValue.delete(),
-        });
+      'sharedWith': FieldValue.arrayRemove([userId]),
+      'permissions.${userId}': FieldValue.delete(),
+    });
   }
 
   // ── BOXES ─────────────────────────────────────────────
@@ -260,38 +259,38 @@ class FirestoreService {
         ))
         .snapshots()
         .listen(
-          (cabinetSnapshot) async {
-            final cabinetIds = cabinetSnapshot.docs.map((doc) => doc.id).toList();
+      (cabinetSnapshot) async {
+        final cabinetIds = cabinetSnapshot.docs.map((doc) => doc.id).toList();
 
-            if (cabinetIds.isEmpty) {
-              controller.add([]);
-              return;
-            }
+        if (cabinetIds.isEmpty) {
+          controller.add([]);
+          return;
+        }
 
-            // Query boxes for all accessible cabinets
-            try {
-              final boxSnapshot = await _firestore
-                  .collection(AppConstants.boxesCollection)
-                  .where('cabinetId', whereIn: cabinetIds)
-                  .orderBy('name')
-                  .get();
+        // Query boxes for all accessible cabinets
+        try {
+          final boxSnapshot = await _firestore
+              .collection(AppConstants.boxesCollection)
+              .where('cabinetId', whereIn: cabinetIds)
+              .orderBy('name')
+              .get();
 
-              final boxes = boxSnapshot.docs
-                  .map((doc) => BoxModel.fromFirestore(doc))
-                  .toList();
+          final boxes = boxSnapshot.docs
+              .map((doc) => BoxModel.fromFirestore(doc))
+              .toList();
 
-              log('📦 Boxes loaded: ${boxes.length}');
-              controller.add(boxes);
-            } catch (e) {
-              log('Error loading boxes: $e');
-              controller.add([]);
-            }
-          },
-          onError: (error) {
-            log('Error loading cabinets for boxes: $error');
-            controller.add([]);
-          },
-        );
+          log('📦 Boxes loaded: ${boxes.length}');
+          controller.add(boxes);
+        } catch (e) {
+          log('Error loading boxes: $e');
+          controller.add([]);
+        }
+      },
+      onError: (error) {
+        log('Error loading cabinets for boxes: $error');
+        controller.add([]);
+      },
+    );
 
     return controller.stream;
   }
@@ -308,16 +307,12 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => BoxModel.fromFirestore(doc))
-              .toList();
-        });
+      return snapshot.docs.map((doc) => BoxModel.fromFirestore(doc)).toList();
+    });
   }
 
   Future<void> addBox(BoxModel box) async {
-    final doc = _firestore
-        .collection(AppConstants.boxesCollection)
-        .doc();
+    final doc = _firestore.collection(AppConstants.boxesCollection).doc();
 
     final data = box.copyWith(id: doc.id).toFirestore();
     await doc.set(data);
@@ -352,10 +347,8 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => ItemModel.fromFirestore(doc))
-              .toList();
-        });
+      return snapshot.docs.map((doc) => ItemModel.fromFirestore(doc)).toList();
+    });
   }
 
   Stream<List<ItemModel>> getItemsByCabinet(String cabinetId) {
@@ -370,32 +363,154 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => ItemModel.fromFirestore(doc))
-              .toList();
-        });
+      return snapshot.docs.map((doc) => ItemModel.fromFirestore(doc)).toList();
+    });
   }
 
-  // ✅ CHANGED — now returns the new document's id so callers (e.g.
-  // ItemProvider's optimistic-add flow) can reconcile a local placeholder
-  // with the real Firestore document once the write completes.
+  /// Creates stock or increases matching stock. The document id is
+  /// deterministic, so concurrent scans cannot produce duplicate documents for
+  /// the same item/location.
   Future<String> addItem(ItemModel item) async {
-    final doc = _firestore
-        .collection(AppConstants.itemsCollection)
-        .doc();
+    if (_userId.isEmpty) throw StateError('User is not authenticated.');
 
-    final data = item.copyWith(id: doc.id).toFirestore();
-    await doc.set(data);
+    final itemKey = _itemKey(item);
+    final doc =
+        _firestore.collection(AppConstants.itemsCollection).doc(itemKey);
+    int quantityAfter = item.quantity;
+    String historyAction = 'create';
+
+    await _firestore.runTransaction((transaction) async {
+      final existing = await transaction.get(doc);
+      if (existing.exists) {
+        final oldQuantity =
+            (existing.data()?['quantity'] as num?)?.toInt() ?? 0;
+        final newQuantity = oldQuantity + item.quantity;
+        quantityAfter = newQuantity;
+        historyAction = 'add';
+        transaction.update(doc, {
+          'quantity': newQuantity,
+          'status': newQuantity == 0 ? 'taken' : 'inside',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        transaction.set(
+            doc, item.copyWith(id: doc.id, itemKey: itemKey).toFirestore());
+      }
+    });
+
+    // History must never make stock creation fail. In particular, older
+    // Firestore rule sets may not yet grant clients access to item_history.
+    await _writeItemHistorySafely(
+      itemId: doc.id,
+      item: item.copyWith(itemKey: itemKey),
+      action: historyAction,
+      quantityDelta: item.quantity,
+      quantityAfter: quantityAfter,
+    );
     return doc.id;
   }
 
   Future<void> updateItem(ItemModel item) async {
     if (item.id == null) return;
 
-    await _firestore
-        .collection(AppConstants.itemsCollection)
-        .doc(item.id)
-        .update(item.toFirestore());
+    final itemRef =
+        _firestore.collection(AppConstants.itemsCollection).doc(item.id);
+    int? quantityDelta;
+    int? quantityAfter;
+    await _firestore.runTransaction((transaction) async {
+      final existing = await transaction.get(itemRef);
+      if (!existing.exists) throw StateError('Item no longer exists.');
+      final oldQuantity = (existing.data()?['quantity'] as num?)?.toInt() ?? 0;
+      transaction.update(itemRef, item.toFirestore());
+      if (oldQuantity != item.quantity) {
+        quantityDelta = item.quantity - oldQuantity;
+        quantityAfter = item.quantity;
+      }
+    });
+
+    if (quantityDelta != null && quantityAfter != null) {
+      await _writeItemHistorySafely(
+        itemId: item.id!,
+        item: item,
+        action: quantityDelta! > 0 ? 'add' : 'remove',
+        quantityDelta: quantityDelta!,
+        quantityAfter: quantityAfter!,
+      );
+    }
+  }
+
+  Stream<List<Map<String, dynamic>>> getItemHistory({int limit = 200}) {
+    if (_userId.isEmpty) return Stream.value([]);
+    return _firestore
+        .collection(AppConstants.itemHistoryCollection)
+        .where('userId', isEqualTo: _userId)
+        .orderBy('timestamp', descending: false)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => {...doc.data(), 'id': doc.id}).toList());
+  }
+
+  String _itemKey(ItemModel item) {
+    String clean(String value) => value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fff]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    // Include location so identical products stored in different boxes remain
+    // independently traceable.
+    return [
+      _userId,
+      clean(item.name),
+      clean(item.categoryId),
+      clean(item.cabinetId ?? 'unassigned'),
+      clean(item.boxId ?? 'unassigned'),
+      clean(item.unit),
+    ].join('_');
+  }
+
+  Map<String, dynamic> _historyData({
+    required String itemId,
+    required ItemModel item,
+    required String action,
+    required int quantityDelta,
+    required int quantityAfter,
+  }) =>
+      {
+        'itemId': itemId,
+        'itemKey': item.itemKey ?? _itemKey(item),
+        'itemName': item.name,
+        'categoryId': item.categoryId,
+        'userId': _userId,
+        'action': action,
+        'quantity': quantityDelta,
+        'quantityAfter': quantityAfter,
+        'unit': item.unit,
+        'timestamp': FieldValue.serverTimestamp(),
+      };
+
+  /// Keeps audit logging best-effort so missing history permissions do not
+  /// block the primary inventory operation.
+  Future<void> _writeItemHistorySafely({
+    required String itemId,
+    required ItemModel item,
+    required String action,
+    required int quantityDelta,
+    required int quantityAfter,
+  }) async {
+    try {
+      await _firestore.collection(AppConstants.itemHistoryCollection).add(
+            _historyData(
+              itemId: itemId,
+              item: item,
+              action: action,
+              quantityDelta: quantityDelta,
+              quantityAfter: quantityAfter,
+            ),
+          );
+    } on FirebaseException catch (error) {
+      log('Item saved, but audit history was not recorded: ${error.code}');
+    }
   }
 
   Future<void> deleteItem(String itemId) async {
@@ -418,16 +533,14 @@ class FirestoreService {
         .orderBy('name')
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => CategoryModel.fromFirestore(doc))
-              .toList();
-        });
+      return snapshot.docs
+          .map((doc) => CategoryModel.fromFirestore(doc))
+          .toList();
+    });
   }
 
   Future<void> addCategory(CategoryModel category) async {
-    final doc = _firestore
-        .collection(AppConstants.categoriesCollection)
-        .doc();
+    final doc = _firestore.collection(AppConstants.categoriesCollection).doc();
 
     final data = category.copyWith(id: doc.id).toFirestore();
     await doc.set(data);
@@ -462,10 +575,10 @@ class FirestoreService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => NotificationModel.fromFirestore(doc))
-              .toList();
-        });
+      return snapshot.docs
+          .map((doc) => NotificationModel.fromFirestore(doc))
+          .toList();
+    });
   }
 
   Stream<int> getUnreadNotificationCount() {
@@ -553,9 +666,7 @@ class FirestoreService {
   }
 
   Future<void> addDoorLog(DoorLogModel log) async {
-    await _firestore
-        .collection('door_logs')
-        .add(log.toFirestore());
+    await _firestore.collection('door_logs').add(log.toFirestore());
   }
 
   // ── USER SEARCH ───────────────────────────────────────
@@ -584,7 +695,8 @@ class FirestoreService {
         .get();
 
     if (snapshot.docs.isNotEmpty) {
-      return UserModel.fromMap(snapshot.docs.first.data()!, snapshot.docs.first.id);
+      return UserModel.fromMap(
+          snapshot.docs.first.data()!, snapshot.docs.first.id);
     }
     return null;
   }

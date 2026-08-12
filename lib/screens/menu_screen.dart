@@ -1,5 +1,7 @@
 // lib/screens/menu_screen.dart
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
@@ -8,6 +10,8 @@ import '../providers/language_provider.dart';
 import '../providers/item_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/cabinet_provider.dart';
+import '../services/firestore_service.dart';
+import '../models/item_model.dart';
 import '../l10n/l10n.dart';
 
 import 'profile_screen.dart';
@@ -65,52 +69,12 @@ class _MenuScreenState extends State<MenuScreen> {
   // ── Reports dialog ────────────────────────────────────
   void _showReports(BuildContext context) {
     final ip = context.read<ItemProvider>();
-    final s = S.of(context);
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
-          children: [
-            const Icon(Icons.assessment, color: Color(0xFF4ECDC4)),
-            const SizedBox(width: 8),
-            Text(s.reports),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _reportRow(s.items, '${ip.totalItems}'),
-            _reportRow(s.expired, '${ip.expiredItems.length}'),
-            _reportRow(s.expiringSoon, '${ip.expiringSoonItems.length}'),
-            _reportRow(s.lowStock, '${ip.lowStockItems.length}'),
-            _reportRow(s.outOfStock, '${ip.outOfStockItems.length}'),
-            _reportRow(s.favorite, '${ip.favoriteItems.length}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(s.close),
-          ),
-        ],
-      ),
+      builder: (_) => _InventoryReportDialog(items: ip.items),
     );
   }
-
-  Widget _reportRow(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: const TextStyle(color: Color(0xFF636E72))),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-      );
 
   // ── Tags ──────────────────────────────────────────────
   void _manageTags(BuildContext context) {
@@ -825,6 +789,151 @@ class _MenuScreenState extends State<MenuScreen> {
           vertical: 4,
         ),
       ),
+    );
+  }
+}
+
+class _InventoryReportDialog extends StatelessWidget {
+  final List<ItemModel> items;
+  const _InventoryReportDialog({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(children: [
+        const Icon(Icons.assessment, color: Color(0xFF4ECDC4)),
+        const SizedBox(width: 8),
+        Text(s.reports),
+      ]),
+      content: SizedBox(
+        width: 420,
+        child: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: FirestoreService().getItemHistory(),
+          builder: (context, snapshot) {
+            final history = snapshot.data ?? const [];
+            return SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const LinearProgressIndicator(),
+                _quantityChart(history),
+                const SizedBox(height: 20),
+                _categoryChart(),
+                const SizedBox(height: 12),
+                Text(
+                  history.isEmpty
+                      ? 'New quantity changes will appear here after you add, remove, or edit stock.'
+                      : 'Based on ${history.length} recorded stock changes.',
+                  textAlign: TextAlign.center,
+                  style:
+                      const TextStyle(fontSize: 12, color: Color(0xFF636E72)),
+                ),
+              ]),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: Text(s.close))
+      ],
+    );
+  }
+
+  Widget _quantityChart(List<Map<String, dynamic>> history) {
+    final now = DateTime.now();
+    final days = List.generate(
+        7,
+        (i) => DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: 6 - i)));
+    final changes = <String, int>{};
+    for (final entry in history) {
+      final raw = entry['timestamp'];
+      final date = raw is Timestamp ? raw.toDate() : null;
+      if (date == null) continue;
+      final key = '${date.year}-${date.month}-${date.day}';
+      changes[key] =
+          (changes[key] ?? 0) + ((entry['quantity'] as num?)?.toInt() ?? 0);
+    }
+    final current = items.fold<int>(0, (total, item) => total + item.quantity);
+    final lastWeekDelta = days.fold<int>(
+        0,
+        (total, day) =>
+            total + (changes['${day.year}-${day.month}-${day.day}'] ?? 0));
+    var running = current - lastWeekDelta;
+    final spots = <FlSpot>[];
+    for (var i = 0; i < days.length; i++) {
+      final day = days[i];
+      running += changes['${day.year}-${day.month}-${day.day}'] ?? 0;
+      spots.add(FlSpot(i.toDouble(), running.toDouble()));
+    }
+    return SizedBox(
+      height: 180,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Quantity over time (7 days)',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Expanded(
+            child: LineChart(LineChartData(
+          gridData: const FlGridData(show: true),
+          titlesData: const FlTitlesData(show: false),
+          borderData: FlBorderData(show: false),
+          lineBarsData: [
+            LineChartBarData(
+                spots: spots,
+                isCurved: true,
+                color: const Color(0xFF4ECDC4),
+                barWidth: 3,
+                dotData: const FlDotData(show: false))
+          ],
+        ))),
+      ]),
+    );
+  }
+
+  Widget _categoryChart() {
+    final quantities = <String, int>{};
+    for (final item in items) {
+      final category = item.categoryId.isNotEmpty ? item.categoryId : 'Other';
+      quantities[category] = (quantities[category] ?? 0) + item.quantity;
+    }
+    final entries =
+        quantities.entries.where((entry) => entry.value > 0).take(6).toList();
+    const colors = [
+      Color(0xFF4ECDC4),
+      Color(0xFFFFA94D),
+      Color(0xFF45B7D1),
+      Color(0xFFFF6B6B),
+      Color(0xFF96CEB4),
+      Color(0xFFDDA0DD)
+    ];
+    return SizedBox(
+      height: 210,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Stock distribution by category',
+            style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Expanded(
+            child: entries.isEmpty
+                ? const Center(child: Text('No stock data yet'))
+                : PieChart(PieChartData(
+                    sectionsSpace: 2,
+                    centerSpaceRadius: 28,
+                    sections: [
+                      for (var i = 0; i < entries.length; i++)
+                        PieChartSectionData(
+                            color: colors[i % colors.length],
+                            value: entries[i].value.toDouble(),
+                            title: '${entries[i].value}',
+                            radius: 58,
+                            titleStyle: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold))
+                    ],
+                  ))),
+      ]),
     );
   }
 }

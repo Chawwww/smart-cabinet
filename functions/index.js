@@ -15,17 +15,9 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
-const { SpeechClient } = require("@google-cloud/speech");
 
 initializeApp();
 const db = getFirestore();
-let speech;
-
-function getSpeechClient() {
-  speech ??= new SpeechClient();
-  return speech;
-}
-
 const DEFAULT_EXPIRY_ALERT_DAYS = 7;
 
 function requireAuth(request) {
@@ -103,8 +95,9 @@ exports.acceptCabinetInvite = onCall({ region: "us-central1" }, async (request) 
   return { success: true };
 });
 
-// Short mobile recordings are transcribed on the server so users do not need
-// to install an on-device Chinese or Malay recognition pack.
+// Short mobile recordings are transcribed by Azure Speech so users do not need
+// an on-device Chinese or Malay recognition pack. Set AZURE_SPEECH_KEY and
+// AZURE_SPEECH_REGION in functions/.env before deploying.
 exports.transcribeVoice = onCall(
   { region: "asia-southeast1", timeoutSeconds: 60, memory: "512MiB" },
   async (request) => {
@@ -117,22 +110,29 @@ exports.transcribeVoice = onCall(
     if (audioBase64.length > 8 * 1024 * 1024) {
       throw new HttpsError("invalid-argument", "Voice recording is too large. Keep it under 30 seconds.");
     }
-    const localeByLanguage = { en: "en-US", zh: "cmn-Hans-CN", ms: "ms-MY" };
-    const languageCodeForRequest = localeByLanguage[languageCode] || "en-US";
-    const [response] = await getSpeechClient().recognize({
-      config: {
-        encoding: "LINEAR16",
-        sampleRateHertz: 16000,
-        languageCode: languageCodeForRequest,
-        enableAutomaticPunctuation: true,
+    const key = process.env.AZURE_SPEECH_KEY;
+    const region = process.env.AZURE_SPEECH_REGION;
+    if (!key || !region) {
+      throw new HttpsError("failed-precondition", "Azure Speech is not configured on the server.");
+    }
+    const localeByLanguage = { en: "en-US", zh: "zh-CN", ms: "ms-MY" };
+    const locale = localeByLanguage[languageCode] || "en-US";
+    const endpoint = `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${encodeURIComponent(locale)}&format=detailed`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": key,
+        "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+        Accept: "application/json",
       },
-      audio: { content: audioBase64 },
+      body: Buffer.from(audioBase64, "base64"),
     });
-    const transcript = (response.results || [])
-      .map((result) => result.alternatives?.[0]?.transcript || "")
-      .join(" ")
-      .trim();
-    return { transcript };
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error("Azure Speech failed:", response.status, result);
+      throw new HttpsError("internal", "Azure Speech could not transcribe this recording.");
+    }
+    return { transcript: (result.DisplayText || "").trim() };
   }
 );
 

@@ -51,3 +51,6 @@ lib/firebase_options.dart
 lib/config/app_constants.dart
 
 node_modules/
+
+# Local server credentials
+functions/.env

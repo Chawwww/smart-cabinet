@@ -90,18 +90,6 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
   }
 
   Future<void> _toggle() async {
-    if (!_speechReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '麦克风不可用 / Microphone not available.\n'
-            'Check app permissions in Settings.',
-          ),
-        ),
-      );
-      return;
-    }
-
     if (_isListening) {
       await _speech.stop();
       setState(() => _isListening = false);
@@ -110,6 +98,12 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
 
     final languageCode = widget.languageCode ??
         context.read<LanguageProvider>().locale.languageCode;
+    // System recognition is optional. When it is unavailable (including when
+    // Chinese/Malay packs cannot be installed), record directly for Azure.
+    if (!_speechReady) {
+      await _toggleCloudRecording(languageCode);
+      return;
+    }
     String? locale;
     try {
       final locales = await _speech.locales();
@@ -185,9 +179,13 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
           _buildButton(color),
           const SizedBox(height: 4),
           Text(
-            _isListening ? '正在听… / Listening…' : '语音 / Voice',
+            (_isListening || _isCloudRecording)
+                ? '正在听… / Listening…'
+                : '语音 / Voice',
             style: TextStyle(
-                fontSize: 10, color: _isListening ? Colors.red : color),
+                fontSize: 10,
+                color:
+                    (_isListening || _isCloudRecording) ? Colors.red : color),
           ),
         ],
       );
@@ -232,19 +230,13 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
         width: widget.iconSize + 20,
         height: widget.iconSize + 20,
         decoration: BoxDecoration(
-          color: _speechReady
-              ? color.withValues(alpha: 0.12)
-              : Colors.grey.withValues(alpha: 0.12),
+          color: color.withValues(alpha: 0.12),
           shape: BoxShape.circle,
           border: Border.all(
-            color: _speechReady
-                ? color.withValues(alpha: 0.4)
-                : Colors.grey.shade400,
+            color: color.withValues(alpha: 0.4),
           ),
         ),
-        child: Icon(Icons.mic,
-            color: _speechReady ? color : Colors.grey.shade400,
-            size: widget.iconSize),
+        child: Icon(Icons.mic, color: color, size: widget.iconSize),
       ),
     );
   }

@@ -4,6 +4,11 @@ import 'package:flutter/foundation.dart';
 
 class ItemModel {
   final String? id;
+
+  /// Stable identity for one kind of stock at one storage location.
+  /// Unlike a timestamp, this value remains the same when the item is scanned
+  /// again, allowing Firestore to increase the existing quantity.
+  final String? itemKey;
   final String name;
   final String? description;
 
@@ -59,6 +64,7 @@ class ItemModel {
 
   const ItemModel({
     this.id,
+    this.itemKey,
     required this.name,
     this.description,
     required this.categoryId,
@@ -100,6 +106,7 @@ class ItemModel {
     final data = doc.data() as Map<String, dynamic>;
     return ItemModel(
       id: doc.id,
+      itemKey: data['itemKey'],
       name: data['name'] ?? '',
       description: data['description'],
       categoryId: data['categoryId'] ?? '',
@@ -142,6 +149,7 @@ class ItemModel {
 
   Map<String, dynamic> toFirestore() => {
         'name': name,
+        'itemKey': itemKey,
         'description': description,
         'categoryId': categoryId,
         'cabinetId': cabinetId,
@@ -186,6 +194,7 @@ class ItemModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'itemKey': itemKey,
       'name': name,
       'description': description,
       'categoryId': categoryId,
@@ -226,6 +235,7 @@ class ItemModel {
 
   ItemModel copyWith({
     String? id,
+    String? itemKey,
     String? name,
     String? description,
     String? categoryId,
@@ -265,6 +275,7 @@ class ItemModel {
   }) {
     return ItemModel(
       id: id ?? this.id,
+      itemKey: itemKey ?? this.itemKey,
       name: name ?? this.name,
       description: description ?? this.description,
       categoryId: categoryId ?? this.categoryId,
