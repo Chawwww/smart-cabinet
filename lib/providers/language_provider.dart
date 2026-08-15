@@ -27,6 +27,25 @@ class LanguageProvider extends ChangeNotifier {
     'ms': '🇲🇾',
   };
 
+  static String normalizeLanguageCode(String? languageCode) {
+    final cleaned = (languageCode ?? 'en').trim();
+    if (cleaned.isEmpty) return 'en';
+
+    final normalized = cleaned.toLowerCase();
+    final mainCode = normalized.split('_').first.split('-').first;
+
+    if (mainCode == 'en') return 'en';
+    if (mainCode == 'zh') return 'zh';
+    if (mainCode == 'ms') return 'ms';
+
+    return 'en';
+  }
+
+  static Locale localeFromCode(String? languageCode) {
+    final normalized = normalizeLanguageCode(languageCode);
+    return Locale(normalized);
+  }
+
   LanguageProvider(this._prefs)
       : _currentLocale = _getSavedLocale(_prefs);
 
@@ -34,18 +53,13 @@ class LanguageProvider extends ChangeNotifier {
 
   static Locale _getSavedLocale(SharedPreferences prefs) {
     final savedCode = prefs.getString(_prefsKey);
-    if (savedCode != null) {
-      return supportedLocales.firstWhere(
-        (l) => l.languageCode == savedCode,
-        orElse: () => const Locale('en'),
-      );
-    }
-    return const Locale('en');
+    return localeFromCode(savedCode);
   }
 
   Future<void> setLanguage(String languageCode) async {
-    _currentLocale = Locale(languageCode);
-    await _prefs.setString(_prefsKey, languageCode);
+    final normalizedCode = normalizeLanguageCode(languageCode);
+    _currentLocale = Locale(normalizedCode);
+    await _prefs.setString(_prefsKey, normalizedCode);
     notifyListeners();
   }
 

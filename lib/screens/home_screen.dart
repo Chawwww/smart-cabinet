@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
+import '../l10n/l10n.dart';
 import '../widgets/bottom_navigation.dart';
 
 import 'workflows_screen.dart';
@@ -49,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = authProvider.currentUser;
     final isDark = themeProvider.isDarkMode;
     final textColor = Theme.of(context).colorScheme.onSurface;
+    final s = S.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -66,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Icon(Icons.cabin, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 8),
-            Text('Smart Cabinet',
+            Text(s.appName,
                 style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
@@ -79,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.auto_awesome, color: Color(0xFF4ECDC4)),
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const AIChatScreen())),
-            tooltip: 'AI Assistant',
+            tooltip: s.aiAssistant,
           ),
           // Dark mode toggle
           IconButton(

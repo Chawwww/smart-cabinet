@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../l10n/l10n.dart';
 import '../models/item_model.dart';
 import '../providers/item_provider.dart';
 import 'item_detail_screen.dart';
@@ -11,18 +12,20 @@ class NotificationsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final itemProvider = context.watch<ItemProvider>();
+    final s = S.of(context);
 
-    final isDark    = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.5);
+    final subColor = textColor.withValues(alpha: 0.5);
 
-    final expiredItems     = itemProvider.expiredItems;
-    final expiringItems    = itemProvider.expiringSoonItems;
-    final lowStockItems    = itemProvider.lowStockItems;
-    final outOfStockItems  = itemProvider.outOfStockItems;
+    final expiredItems = itemProvider.expiredItems;
+    final expiringItems = itemProvider.expiringSoonItems;
+    final lowStockItems = itemProvider.lowStockItems;
+    final outOfStockItems = itemProvider.outOfStockItems;
 
-    final total = expiredItems.length + expiringItems.length +
-        lowStockItems.length + outOfStockItems.length;
+    final total = expiredItems.length +
+        expiringItems.length +
+        lowStockItems.length +
+        outOfStockItems.length;
 
     final hasNotifications = total > 0;
 
@@ -37,7 +40,7 @@ class NotificationsScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
-                  Text('Notifications',
+                  Text(s.notifications,
                       style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
@@ -65,10 +68,10 @@ class NotificationsScreen extends StatelessWidget {
             Expanded(
               child: itemProvider.isLoading
                   ? const Center(
-                      child: CircularProgressIndicator(
-                          color: Color(0xFF4ECDC4)))
+                      child:
+                          CircularProgressIndicator(color: Color(0xFF4ECDC4)))
                   : !hasNotifications
-                      ? _buildEmpty(subColor)
+                      ? _buildEmpty(s, subColor)
                       : ListView(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 4),
@@ -78,8 +81,7 @@ class NotificationsScreen extends StatelessWidget {
                               _buildSection(
                                 context: context,
                                 title: '🚫 Expired Items',
-                                subtitle:
-                                    'Do not use — remove from cabinet',
+                                subtitle: 'Do not use — remove from cabinet',
                                 color: Colors.red,
                                 icon: Icons.warning_amber_rounded,
                                 items: expiredItems,
@@ -91,8 +93,7 @@ class NotificationsScreen extends StatelessWidget {
                               _buildSection(
                                 context: context,
                                 title: '⏰ Expiring Soon',
-                                subtitle:
-                                    'Use or restock within 7 days',
+                                subtitle: 'Use or restock within 7 days',
                                 color: Colors.orange,
                                 icon: Icons.timer_outlined,
                                 items: expiringItems,
@@ -116,8 +117,7 @@ class NotificationsScreen extends StatelessWidget {
                               _buildSection(
                                 context: context,
                                 title: '📉 Low Stock',
-                                subtitle:
-                                    'Running low — consider restocking',
+                                subtitle: 'Running low — consider restocking',
                                 color: Colors.orange.shade700,
                                 icon: Icons.remove_shopping_cart_outlined,
                                 items: lowStockItems,
@@ -134,7 +134,7 @@ class NotificationsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildEmpty(Color subColor) {
+  Widget _buildEmpty(S s, Color subColor) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -142,13 +142,11 @@ class NotificationsScreen extends StatelessWidget {
           Icon(Icons.check_circle_outline,
               size: 80, color: subColor.withValues(alpha: 0.25)),
           const SizedBox(height: 16),
-          Text('All good!',
+          Text(s.allGood,
               style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: subColor)),
+                  fontSize: 20, fontWeight: FontWeight.w600, color: subColor)),
           const SizedBox(height: 8),
-          Text('No expired, expiring, or low-stock items',
+          Text(s.noAlerts,
               style: TextStyle(fontSize: 14, color: subColor),
               textAlign: TextAlign.center),
         ],
@@ -166,7 +164,7 @@ class NotificationsScreen extends StatelessWidget {
     required String badgeLabel,
   }) {
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.55);
+    final subColor = textColor.withValues(alpha: 0.55);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,7 +175,8 @@ class NotificationsScreen extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 32, height: 32,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
@@ -195,8 +194,7 @@ class NotificationsScreen extends StatelessWidget {
                             fontWeight: FontWeight.w700,
                             color: textColor)),
                     Text(subtitle,
-                        style: TextStyle(
-                            fontSize: 11, color: subColor)),
+                        style: TextStyle(fontSize: 11, color: subColor)),
                   ],
                 ),
               ),
@@ -205,31 +203,29 @@ class NotificationsScreen extends StatelessWidget {
         ),
 
         // Item cards
-        ...items.map((item) => _buildItemCard(
-            context, item, color, badgeLabel)),
+        ...items
+            .map((item) => _buildItemCard(context, item, color, badgeLabel)),
         const SizedBox(height: 8),
       ],
     );
   }
 
-  Widget _buildItemCard(BuildContext context, ItemModel item,
-      Color accentColor, String badgeLabel) {
+  Widget _buildItemCard(BuildContext context, ItemModel item, Color accentColor,
+      String badgeLabel) {
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.55);
-    final isDark    = Theme.of(context).brightness == Brightness.dark;
-    final hasPhoto  = item.imageUrls.isNotEmpty;
+    final subColor = textColor.withValues(alpha: 0.55);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasPhoto = item.imageUrls.isNotEmpty;
     final fmt = DateFormat('dd MMM yyyy');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(
-              builder: (_) => ItemDetailScreen(item: item)),
+          MaterialPageRoute(builder: (_) => ItemDetailScreen(item: item)),
         ),
         child: Padding(
           padding: const EdgeInsets.all(12),
@@ -239,7 +235,8 @@ class NotificationsScreen extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: SizedBox(
-                  width: 52, height: 52,
+                  width: 52,
+                  height: 52,
                   child: hasPhoto
                       ? Image.network(
                           item.imageUrls.first,
@@ -279,8 +276,7 @@ class NotificationsScreen extends StatelessWidget {
                         item.isExpired
                             ? 'Expired: ${fmt.format(item.expiryDate!)}'
                             : 'Expires: ${fmt.format(item.expiryDate!)} · ${item.daysLeftText}',
-                        style: TextStyle(
-                            fontSize: 11, color: subColor),
+                        style: TextStyle(fontSize: 11, color: subColor),
                       ),
                   ],
                 ),
@@ -288,8 +284,7 @@ class NotificationsScreen extends StatelessWidget {
 
               // Badge
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: accentColor,
                   borderRadius: BorderRadius.circular(8),
@@ -312,8 +307,7 @@ class NotificationsScreen extends StatelessWidget {
     return Container(
       color: accent.withValues(alpha: isDark ? 0.2 : 0.1),
       child: Center(
-        child: Text(item.icon ?? '📦',
-            style: const TextStyle(fontSize: 26)),
+        child: Text(item.icon ?? '📦', style: const TextStyle(fontSize: 26)),
       ),
     );
   }

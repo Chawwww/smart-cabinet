@@ -23,12 +23,16 @@ class MessageLookup extends MessageLookupByLibrary {
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "add": MessageLookupByLibrary.simpleMessage("Add"),
+    "addCategory": MessageLookupByLibrary.simpleMessage("Add Category"),
     "addItem": MessageLookupByLibrary.simpleMessage("Add Item"),
     "addNewItem": MessageLookupByLibrary.simpleMessage("Add New Item"),
+    "aiAndFeatures": MessageLookupByLibrary.simpleMessage("AI & Features"),
     "aiAssistant": MessageLookupByLibrary.simpleMessage("AI Assistant"),
     "aiAutoFill": MessageLookupByLibrary.simpleMessage("AI Auto-Fill"),
     "aiCount": MessageLookupByLibrary.simpleMessage("AI Count"),
+    "aiSearching": MessageLookupByLibrary.simpleMessage("AI is searching…"),
     "all": MessageLookupByLibrary.simpleMessage("All"),
+    "allGood": MessageLookupByLibrary.simpleMessage("All good!"),
     "appName": MessageLookupByLibrary.simpleMessage("Smart Cabinet"),
     "appTitle": MessageLookupByLibrary.simpleMessage("Smart Cabinet Finder"),
     "back": MessageLookupByLibrary.simpleMessage("Back"),
@@ -57,6 +61,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "Camera permission is required to take photos of items.",
     ),
     "cancel": MessageLookupByLibrary.simpleMessage("Cancel"),
+    "categories": MessageLookupByLibrary.simpleMessage("Categories"),
     "category": MessageLookupByLibrary.simpleMessage("Category"),
     "categoryColorHint": MessageLookupByLibrary.simpleMessage("Select a color"),
     "categoryIconHint": MessageLookupByLibrary.simpleMessage("Select an icon"),
@@ -74,10 +79,14 @@ class MessageLookup extends MessageLookupByLibrary {
     "connected": MessageLookupByLibrary.simpleMessage("Connected"),
     "continueText": MessageLookupByLibrary.simpleMessage("Continue"),
     "create": MessageLookupByLibrary.simpleMessage("Create"),
+    "createFirstCategory": MessageLookupByLibrary.simpleMessage(
+      "Create your first category to organise your items",
+    ),
     "customFields": MessageLookupByLibrary.simpleMessage("Custom Fields"),
     "damaged": MessageLookupByLibrary.simpleMessage("Damaged"),
     "darkMode": MessageLookupByLibrary.simpleMessage("Dark Mode"),
     "delete": MessageLookupByLibrary.simpleMessage("Delete"),
+    "deleteCategory": MessageLookupByLibrary.simpleMessage("Delete Category"),
     "deleteItem": MessageLookupByLibrary.simpleMessage("Delete Item"),
     "description": MessageLookupByLibrary.simpleMessage("Description"),
     "deviceConnected": MessageLookupByLibrary.simpleMessage("Device Connected"),
@@ -94,6 +103,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "english": MessageLookupByLibrary.simpleMessage("English"),
     "error": MessageLookupByLibrary.simpleMessage("An error occurred"),
     "expired": MessageLookupByLibrary.simpleMessage("Expired"),
+    "expiredItems": MessageLookupByLibrary.simpleMessage("Expired Items"),
     "expiringSoon": MessageLookupByLibrary.simpleMessage("Expiring Soon"),
     "expiryDate": MessageLookupByLibrary.simpleMessage("Expiry Date"),
     "expiryDateHint": MessageLookupByLibrary.simpleMessage(
@@ -102,6 +112,8 @@ class MessageLookup extends MessageLookupByLibrary {
     "failed": MessageLookupByLibrary.simpleMessage("Failed"),
     "favorite": MessageLookupByLibrary.simpleMessage("Favorite"),
     "forgotPassword": MessageLookupByLibrary.simpleMessage("Forgot Password?"),
+    "foundInCabinet": MessageLookupByLibrary.simpleMessage("Found in cabinet"),
+    "googleAccount": MessageLookupByLibrary.simpleMessage("Google Account"),
     "guestUser": MessageLookupByLibrary.simpleMessage("Guest User"),
     "hasAccount": MessageLookupByLibrary.simpleMessage(
       "Already have an account?",
@@ -111,6 +123,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "home": MessageLookupByLibrary.simpleMessage("Home"),
     "info": MessageLookupByLibrary.simpleMessage("Info"),
     "insideCabinet": MessageLookupByLibrary.simpleMessage("Inside Cabinet"),
+    "iotAndHardware": MessageLookupByLibrary.simpleMessage("IoT & Hardware"),
     "itemDescriptionHint": MessageLookupByLibrary.simpleMessage(
       "Optional description",
     ),
@@ -131,6 +144,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "locationPermission": MessageLookupByLibrary.simpleMessage(
       "Location permission is required for BLE scanning.",
     ),
+    "loggedIn": MessageLookupByLibrary.simpleMessage("Logged In"),
     "login": MessageLookupByLibrary.simpleMessage("Login"),
     "logout": MessageLookupByLibrary.simpleMessage("Logout"),
     "lowStock": MessageLookupByLibrary.simpleMessage("Low Stock"),
@@ -139,6 +153,7 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "lowerDoor": MessageLookupByLibrary.simpleMessage("Lower Door"),
     "malay": MessageLookupByLibrary.simpleMessage("Bahasa Melayu"),
+    "manageCabinets": MessageLookupByLibrary.simpleMessage("Manage Cabinets"),
     "manageCategories": MessageLookupByLibrary.simpleMessage(
       "Manage Categories",
     ),
@@ -154,8 +169,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "noAccount": MessageLookupByLibrary.simpleMessage(
       "Don\'t have an account?",
     ),
+    "noAlerts": MessageLookupByLibrary.simpleMessage(
+      "No expired, expiring, or low-stock items",
+    ),
     "noBox": MessageLookupByLibrary.simpleMessage("No Box"),
     "noCabinet": MessageLookupByLibrary.simpleMessage("No Cabinet"),
+    "noCategories": MessageLookupByLibrary.simpleMessage("No Categories"),
     "noData": MessageLookupByLibrary.simpleMessage("No data available"),
     "noDevicesFound": MessageLookupByLibrary.simpleMessage("No devices found"),
     "noInternet": MessageLookupByLibrary.simpleMessage(
@@ -169,12 +188,20 @@ class MessageLookup extends MessageLookupByLibrary {
     "notificationPermission": MessageLookupByLibrary.simpleMessage(
       "Notification permission is required for alerts.",
     ),
+    "notificationSettings": MessageLookupByLibrary.simpleMessage(
+      "Notification Settings",
+    ),
     "notifications": MessageLookupByLibrary.simpleMessage("Notifications"),
     "ok": MessageLookupByLibrary.simpleMessage("OK"),
+    "open": MessageLookupByLibrary.simpleMessage("Open"),
+    "otherMatches": MessageLookupByLibrary.simpleMessage("Other matches"),
     "outOfStock": MessageLookupByLibrary.simpleMessage("Out of Stock"),
     "password": MessageLookupByLibrary.simpleMessage("Password"),
     "permissionRequired": MessageLookupByLibrary.simpleMessage(
       "Permission Required",
+    ),
+    "pickVoiceLanguage": MessageLookupByLibrary.simpleMessage(
+      "Pick a language above, then tap 🎤 to search by voice",
     ),
     "productionDate": MessageLookupByLibrary.simpleMessage("Production Date"),
     "productionDateHint": MessageLookupByLibrary.simpleMessage(
@@ -184,6 +211,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "quantity": MessageLookupByLibrary.simpleMessage("Quantity"),
     "quantityHint": MessageLookupByLibrary.simpleMessage("Enter quantity"),
     "register": MessageLookupByLibrary.simpleMessage("Register"),
+    "relatedInformation": MessageLookupByLibrary.simpleMessage(
+      "Related Information",
+    ),
     "remove": MessageLookupByLibrary.simpleMessage("Remove"),
     "reports": MessageLookupByLibrary.simpleMessage("Reports"),
     "retry": MessageLookupByLibrary.simpleMessage("Retry"),
@@ -193,6 +223,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "scanDevice": MessageLookupByLibrary.simpleMessage("Scan for Devices"),
     "scanning": MessageLookupByLibrary.simpleMessage("Scanning..."),
     "search": MessageLookupByLibrary.simpleMessage("Search"),
+    "searchAnyLanguage": MessageLookupByLibrary.simpleMessage(
+      "Search in any language",
+    ),
     "searchHint": MessageLookupByLibrary.simpleMessage("Search items..."),
     "selectBox": MessageLookupByLibrary.simpleMessage("Select Box"),
     "selectCabinet": MessageLookupByLibrary.simpleMessage("Select Cabinet"),
@@ -207,6 +240,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "smartCabinetControl": MessageLookupByLibrary.simpleMessage(
       "Smart Cabinet Control",
     ),
+    "smartCabinetFinder": MessageLookupByLibrary.simpleMessage(
+      "Smart Cabinet Finder",
+    ),
     "status": MessageLookupByLibrary.simpleMessage("Status"),
     "success": MessageLookupByLibrary.simpleMessage("Success"),
     "syncInventory": MessageLookupByLibrary.simpleMessage("Sync Inventory"),
@@ -216,13 +252,25 @@ class MessageLookup extends MessageLookupByLibrary {
     "takeOut": MessageLookupByLibrary.simpleMessage("Take Out"),
     "taken": MessageLookupByLibrary.simpleMessage("Taken"),
     "takenBy": MessageLookupByLibrary.simpleMessage("Taken By"),
+    "tapAiSearch": MessageLookupByLibrary.simpleMessage(
+      "Tap ✨ for AI smart search",
+    ),
+    "tools": MessageLookupByLibrary.simpleMessage("Tools"),
+    "tryAiSmartSearch": MessageLookupByLibrary.simpleMessage(
+      "Try AI Smart Search",
+    ),
+    "typeSearchExample": MessageLookupByLibrary.simpleMessage(
+      "Type 头痛, sakit kepala, headache…",
+    ),
     "unit": MessageLookupByLibrary.simpleMessage("Unit"),
     "unitHint": MessageLookupByLibrary.simpleMessage("Select unit"),
     "update": MessageLookupByLibrary.simpleMessage("Update"),
     "upperDoor": MessageLookupByLibrary.simpleMessage("Upper Door"),
     "used": MessageLookupByLibrary.simpleMessage("Used"),
+    "verified": MessageLookupByLibrary.simpleMessage("Verified"),
     "warning": MessageLookupByLibrary.simpleMessage("Warning"),
     "welcome": MessageLookupByLibrary.simpleMessage("Welcome!"),
+    "whereToBuy": MessageLookupByLibrary.simpleMessage("Where to Buy"),
     "withdraw": MessageLookupByLibrary.simpleMessage("Withdraw"),
     "yes": MessageLookupByLibrary.simpleMessage("Yes"),
   };

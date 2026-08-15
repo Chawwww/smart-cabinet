@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/l10n.dart';
 import '../providers/category_provider.dart';
 import '../providers/item_provider.dart';
 import '../widgets/category_card.dart';
@@ -27,20 +28,20 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   Widget build(BuildContext context) {
     final categoryProvider = context.watch<CategoryProvider>();
-    final itemProvider     = context.watch<ItemProvider>();
+    final itemProvider = context.watch<ItemProvider>();
+    final s = S.of(context);
 
     if (categoryProvider.isLoading) return const LoadingWidget();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Categories'),
+        title: Text(s.categories),
         actions: [
           IconButton(
             icon: const Icon(Icons.add, color: Color(0xFF4ECDC4)),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(
-                  builder: (_) => const AddEditCategoryScreen()),
+              MaterialPageRoute(builder: (_) => const AddEditCategoryScreen()),
             ),
           ),
         ],
@@ -48,8 +49,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
       body: categoryProvider.categories.isEmpty
           ? EmptyState(
               icon: Icons.category_outlined,
-              title: 'No Categories',
-              subtitle: 'Create your first category to organise your items',
+              title: s.noCategories,
+              subtitle: s.createFirstCategory,
               action: ElevatedButton(
                 onPressed: () => Navigator.push(
                   context,
@@ -58,7 +59,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                 ),
                 style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF4ECDC4)),
-                child: const Text('Add Category'),
+                child: Text(s.addCategory),
               ),
             )
           : GridView.builder(
@@ -78,31 +79,29 @@ class _CategoryScreenState extends State<CategoryScreen> {
                 return CategoryCard(
                   category: cat,
                   itemCount: count,
-                  onTap: () => Navigator.pushNamed(
-                      context, '/items',
-                      arguments: cat.id),
+                  onTap: () =>
+                      Navigator.pushNamed(context, '/items', arguments: cat.id),
                   onEdit: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) =>
-                            AddEditCategoryScreen(category: cat)),
+                        builder: (_) => AddEditCategoryScreen(category: cat)),
                   ),
                   onDelete: () async {
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (_) => AlertDialog(
-                        title: const Text('Delete Category'),
+                        title: Text(s.deleteCategory),
                         content: Text(
                             'Delete "${cat.name}"? Items in this category will also be deleted.'),
                         actions: [
                           TextButton(
                               onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel')),
+                              child: Text(s.cancel)),
                           TextButton(
                               onPressed: () => Navigator.pop(context, true),
                               style: TextButton.styleFrom(
                                   foregroundColor: Colors.red),
-                              child: const Text('Delete')),
+                              child: Text(s.delete)),
                         ],
                       ),
                     );

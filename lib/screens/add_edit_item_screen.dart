@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/cabinet_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/item_provider.dart';
+import '../providers/language_provider.dart';
 import '../services/ai_service.dart';
 import '../services/iot_service.dart';
 import '../services/location_memory_service.dart';
@@ -1176,6 +1177,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                           controller: _nameCtrl,
                           label: 'Item Name *',
                           hint: 'e.g. Paracetamol 500mg',
+                          languageCode: context.read<LanguageProvider>().locale.languageCode,
                           textCapitalization: TextCapitalization.words,
                           validator: (v) => v == null || v.trim().isEmpty
                               ? 'Name is required'
@@ -1250,6 +1252,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                     controller: _brandCtrl,
                     label: 'Brand',
                     hint: 'Optional',
+                    languageCode: context.read<LanguageProvider>().locale.languageCode,
                   ),
 
                   // ── CATEGORY ────────────────────────────────
@@ -1474,6 +1477,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                     label: 'Notes',
                     hint: 'Any extra information',
                     maxLines: 3,
+                    languageCode: context.read<LanguageProvider>().locale.languageCode,
                   ),
                   const SizedBox(height: 12),
 
@@ -1481,6 +1485,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                     controller: _tagsCtrl,
                     label: 'Tags',
                     hint: 'Comma separated, e.g. fever, adult',
+                    languageCode: context.read<LanguageProvider>().locale.languageCode,
                   ),
 
                   const SizedBox(height: 36),

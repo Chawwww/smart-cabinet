@@ -18,4 +18,15 @@ class CloudSpeechService {
     });
     return ((result.data as Map)['transcript'] as String? ?? '').trim();
   }
+
+  Future<bool> isAzureSpeechConfigured() async {
+    try {
+      final result = await _functions
+          .httpsCallable('checkAzureSpeechAvailability')
+          .call();
+      return ((result.data as Map)['azureSpeechConfigured'] as bool?) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

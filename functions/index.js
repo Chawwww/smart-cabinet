@@ -135,7 +135,12 @@ exports.transcribeVoice = onCall(
     return { transcript: (result.DisplayText || "").trim() };
   }
 );
-
+exports.checkAzureSpeechAvailability = onCall({ region: "asia-southeast1" }, async (request) => {
+  requireAuth(request);
+  const key = process.env.AZURE_SPEECH_KEY;
+  const region = process.env.AZURE_SPEECH_REGION;
+  return { azureSpeechConfigured: Boolean(key && region) };
+});
 // ═══════════════════════════════════════════════════════
 // Shared helper: write a Firestore notification doc AND
 // send a push notification via FCM to the user's device.

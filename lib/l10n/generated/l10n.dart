@@ -264,11 +264,211 @@ class S {
     );
   }
 
+  /// `Categories`
+  String get categories {
+    return Intl.message('Categories', name: 'categories', desc: '', args: []);
+  }
+
+  /// `No Categories`
+  String get noCategories {
+    return Intl.message(
+      'No Categories',
+      name: 'noCategories',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Create your first category to organise your items`
+  String get createFirstCategory {
+    return Intl.message(
+      'Create your first category to organise your items',
+      name: 'createFirstCategory',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Add Category`
+  String get addCategory {
+    return Intl.message(
+      'Add Category',
+      name: 'addCategory',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Delete Category`
+  String get deleteCategory {
+    return Intl.message(
+      'Delete Category',
+      name: 'deleteCategory',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `All good!`
+  String get allGood {
+    return Intl.message('All good!', name: 'allGood', desc: '', args: []);
+  }
+
+  /// `No expired, expiring, or low-stock items`
+  String get noAlerts {
+    return Intl.message(
+      'No expired, expiring, or low-stock items',
+      name: 'noAlerts',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Expired Items`
+  String get expiredItems {
+    return Intl.message(
+      'Expired Items',
+      name: 'expiredItems',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Expiring Soon`
+  String get expiringSoon {
+    return Intl.message(
+      'Expiring Soon',
+      name: 'expiringSoon',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Out of Stock`
+  String get outOfStock {
+    return Intl.message('Out of Stock', name: 'outOfStock', desc: '', args: []);
+  }
+
+  /// `Low Stock`
+  String get lowStock {
+    return Intl.message('Low Stock', name: 'lowStock', desc: '', args: []);
+  }
+
+  /// `Search in any language`
+  String get searchAnyLanguage {
+    return Intl.message(
+      'Search in any language',
+      name: 'searchAnyLanguage',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Type 头痛, sakit kepala, headache…`
+  String get typeSearchExample {
+    return Intl.message(
+      'Type 头痛, sakit kepala, headache…',
+      name: 'typeSearchExample',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Tap ✨ for AI smart search`
+  String get tapAiSearch {
+    return Intl.message(
+      'Tap ✨ for AI smart search',
+      name: 'tapAiSearch',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Pick a language above, then tap 🎤 to search by voice`
+  String get pickVoiceLanguage {
+    return Intl.message(
+      'Pick a language above, then tap 🎤 to search by voice',
+      name: 'pickVoiceLanguage',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `AI is searching…`
+  String get aiSearching {
+    return Intl.message(
+      'AI is searching…',
+      name: 'aiSearching',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Try AI Smart Search`
+  String get tryAiSmartSearch {
+    return Intl.message(
+      'Try AI Smart Search',
+      name: 'tryAiSmartSearch',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Found in cabinet`
+  String get foundInCabinet {
+    return Intl.message(
+      'Found in cabinet',
+      name: 'foundInCabinet',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Related Information`
+  String get relatedInformation {
+    return Intl.message(
+      'Related Information',
+      name: 'relatedInformation',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Where to Buy`
+  String get whereToBuy {
+    return Intl.message('Where to Buy', name: 'whereToBuy', desc: '', args: []);
+  }
+
+  /// `Other matches`
+  String get otherMatches {
+    return Intl.message(
+      'Other matches',
+      name: 'otherMatches',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Open`
+  String get open {
+    return Intl.message('Open', name: 'open', desc: '', args: []);
+  }
+
   /// `Manage Categories`
   String get manageCategories {
     return Intl.message(
       'Manage Categories',
       name: 'manageCategories',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Manage Cabinets`
+  String get manageCabinets {
+    return Intl.message(
+      'Manage Cabinets',
+      name: 'manageCabinets',
       desc: '',
       args: [],
     );
@@ -289,6 +489,16 @@ class S {
     );
   }
 
+  /// `AI & Features`
+  String get aiAndFeatures {
+    return Intl.message(
+      'AI & Features',
+      name: 'aiAndFeatures',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `Medicine Info`
   String get medicineInfo {
     return Intl.message(
@@ -302,6 +512,11 @@ class S {
   /// `Reports`
   String get reports {
     return Intl.message('Reports', name: 'reports', desc: '', args: []);
+  }
+
+  /// `Tools`
+  String get tools {
+    return Intl.message('Tools', name: 'tools', desc: '', args: []);
   }
 
   /// `Bulk Import`
@@ -339,11 +554,81 @@ class S {
     return Intl.message('Sync Now', name: 'syncNow', desc: '', args: []);
   }
 
+  /// `IoT & Hardware`
+  String get iotAndHardware {
+    return Intl.message(
+      'IoT & Hardware',
+      name: 'iotAndHardware',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Smart Cabinet Control`
+  String get smartCabinetControl {
+    return Intl.message(
+      'Smart Cabinet Control',
+      name: 'smartCabinetControl',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Shared Cabinets`
+  String get sharedCabinets {
+    return Intl.message(
+      'Shared Cabinets',
+      name: 'sharedCabinets',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `Help & Support`
   String get helpSupport {
     return Intl.message(
       'Help & Support',
       name: 'helpSupport',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Notification Settings`
+  String get notificationSettings {
+    return Intl.message(
+      'Notification Settings',
+      name: 'notificationSettings',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Google Account`
+  String get googleAccount {
+    return Intl.message(
+      'Google Account',
+      name: 'googleAccount',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Verified`
+  String get verified {
+    return Intl.message('Verified', name: 'verified', desc: '', args: []);
+  }
+
+  /// `Logged In`
+  String get loggedIn {
+    return Intl.message('Logged In', name: 'loggedIn', desc: '', args: []);
+  }
+
+  /// `Smart Cabinet Finder`
+  String get smartCabinetFinder {
+    return Intl.message(
+      'Smart Cabinet Finder',
+      name: 'smartCabinetFinder',
       desc: '',
       args: [],
     );
@@ -577,26 +862,6 @@ class S {
   /// `Expired`
   String get expired {
     return Intl.message('Expired', name: 'expired', desc: '', args: []);
-  }
-
-  /// `Expiring Soon`
-  String get expiringSoon {
-    return Intl.message(
-      'Expiring Soon',
-      name: 'expiringSoon',
-      desc: '',
-      args: [],
-    );
-  }
-
-  /// `Low Stock`
-  String get lowStock {
-    return Intl.message('Low Stock', name: 'lowStock', desc: '', args: []);
-  }
-
-  /// `Out of Stock`
-  String get outOfStock {
-    return Intl.message('Out of Stock', name: 'outOfStock', desc: '', args: []);
   }
 
   /// `Inside Cabinet`
@@ -1072,26 +1337,6 @@ class S {
   /// `No items found`
   String get noItems {
     return Intl.message('No items found', name: 'noItems', desc: '', args: []);
-  }
-
-  /// `Shared Cabinets`
-  String get sharedCabinets {
-    return Intl.message(
-      'Shared Cabinets',
-      name: 'sharedCabinets',
-      desc: '',
-      args: [],
-    );
-  }
-
-  /// `Smart Cabinet Control`
-  String get smartCabinetControl {
-    return Intl.message(
-      'Smart Cabinet Control',
-      name: 'smartCabinetControl',
-      desc: '',
-      args: [],
-    );
   }
 }
 

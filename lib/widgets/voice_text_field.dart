@@ -50,6 +50,7 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
   bool _isListening = false;
   bool _isCloudRecording = false;
   bool _speechReady = false;
+  bool _azureAvailable = false;
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
 
@@ -63,6 +64,7 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
     _pulseAnim = Tween(begin: 0.85, end: 1.0)
         .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
     _initSpeech();
+    _checkCloudSpeechAvailability();
   }
 
   @override
@@ -89,6 +91,15 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
     } catch (_) {}
   }
 
+  Future<void> _checkCloudSpeechAvailability() async {
+    try {
+      final available = await CloudSpeechService.instance.isAzureSpeechConfigured();
+      if (mounted) setState(() => _azureAvailable = available);
+    } catch (_) {
+      if (mounted) setState(() => _azureAvailable = false);
+    }
+  }
+
   Future<void> _toggle() async {
     if (_isListening) {
       await _speech.stop();
@@ -101,6 +112,14 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
     // System recognition is optional. When it is unavailable (including when
     // Chinese/Malay packs cannot be installed), record directly for Azure.
     if (!_speechReady) {
+      if (!_azureAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'Voice input is unavailable. Check microphone permissions or cloud voice settings.')));
+        }
+        return;
+      }
       await _toggleCloudRecording(languageCode);
       return;
     }
@@ -110,6 +129,14 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
       locale =
           SpeechLocaleUtils.resolveInstalledLocaleId(languageCode, locales);
       if (locale == null) {
+        if (!_azureAvailable) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text(
+                    'Voice input for this language is not installed and cloud fallback is unavailable.')));
+          }
+          return;
+        }
         await _toggleCloudRecording(languageCode);
         return;
       }
@@ -236,7 +263,25 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
             color: color.withValues(alpha: 0.4),
           ),
         ),
-        child: Icon(Icons.mic, color: color, size: widget.iconSize),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(Icons.mic, color: color, size: widget.iconSize),
+            if (!_speechReady && _azureAvailable)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFF00B894),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -263,6 +308,7 @@ class VoiceTextField extends StatelessWidget {
   final int maxLines;
   final TextInputType? keyboardType;
   final TextCapitalization textCapitalization;
+  final String? languageCode;
 
   const VoiceTextField({
     super.key,
@@ -275,6 +321,7 @@ class VoiceTextField extends StatelessWidget {
     this.maxLines = 1,
     this.keyboardType,
     this.textCapitalization = TextCapitalization.none,
+    this.languageCode,
   });
 
   @override
@@ -310,6 +357,7 @@ class VoiceTextField extends StatelessWidget {
                 padding: const EdgeInsets.only(right: 8),
                 child: VoiceInputWidget(
                   iconSize: 20,
+                  languageCode: languageCode,
                   onResult: (text) {
                     controller.text = text;
                     onVoiceResult!(text);

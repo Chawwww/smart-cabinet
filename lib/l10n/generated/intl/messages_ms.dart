@@ -23,12 +23,16 @@ class MessageLookup extends MessageLookupByLibrary {
   final messages = _notInlinedMessages(_notInlinedMessages);
   static Map<String, Function> _notInlinedMessages(_) => <String, Function>{
     "add": MessageLookupByLibrary.simpleMessage("Tambah"),
+    "addCategory": MessageLookupByLibrary.simpleMessage("Tambah Kategori"),
     "addItem": MessageLookupByLibrary.simpleMessage("Tambah Barang"),
     "addNewItem": MessageLookupByLibrary.simpleMessage("Tambah Barang Baru"),
+    "aiAndFeatures": MessageLookupByLibrary.simpleMessage("AI & Ciri"),
     "aiAssistant": MessageLookupByLibrary.simpleMessage("Pembantu AI"),
     "aiAutoFill": MessageLookupByLibrary.simpleMessage("Isi Auto AI"),
     "aiCount": MessageLookupByLibrary.simpleMessage("Kiraan AI"),
+    "aiSearching": MessageLookupByLibrary.simpleMessage("AI sedang mencari…"),
     "all": MessageLookupByLibrary.simpleMessage("Semua"),
+    "allGood": MessageLookupByLibrary.simpleMessage("Semua baik!"),
     "appName": MessageLookupByLibrary.simpleMessage("Kabinet Pintar"),
     "appTitle": MessageLookupByLibrary.simpleMessage("Pencari Kabinet Pintar"),
     "back": MessageLookupByLibrary.simpleMessage("Kembali"),
@@ -57,6 +61,7 @@ class MessageLookup extends MessageLookupByLibrary {
       "Kebenaran kamera diperlukan untuk mengambil gambar barang.",
     ),
     "cancel": MessageLookupByLibrary.simpleMessage("Batal"),
+    "categories": MessageLookupByLibrary.simpleMessage("Kategori"),
     "category": MessageLookupByLibrary.simpleMessage("Kategori"),
     "categoryColorHint": MessageLookupByLibrary.simpleMessage("Pilih warna"),
     "categoryIconHint": MessageLookupByLibrary.simpleMessage("Pilih ikon"),
@@ -76,10 +81,14 @@ class MessageLookup extends MessageLookupByLibrary {
     "connected": MessageLookupByLibrary.simpleMessage("Bersambung"),
     "continueText": MessageLookupByLibrary.simpleMessage("Teruskan"),
     "create": MessageLookupByLibrary.simpleMessage("Cipta"),
+    "createFirstCategory": MessageLookupByLibrary.simpleMessage(
+      "Cipta kategori pertama anda untuk menyusun barang",
+    ),
     "customFields": MessageLookupByLibrary.simpleMessage("Medan Tersuai"),
     "damaged": MessageLookupByLibrary.simpleMessage("Rosak"),
     "darkMode": MessageLookupByLibrary.simpleMessage("Mod Gelap"),
     "delete": MessageLookupByLibrary.simpleMessage("Padam"),
+    "deleteCategory": MessageLookupByLibrary.simpleMessage("Padam Kategori"),
     "deleteItem": MessageLookupByLibrary.simpleMessage("Padam Barang"),
     "description": MessageLookupByLibrary.simpleMessage("Penerangan"),
     "deviceConnected": MessageLookupByLibrary.simpleMessage(
@@ -98,6 +107,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "english": MessageLookupByLibrary.simpleMessage("English"),
     "error": MessageLookupByLibrary.simpleMessage("Ralat berlaku"),
     "expired": MessageLookupByLibrary.simpleMessage("Luput"),
+    "expiredItems": MessageLookupByLibrary.simpleMessage("Barang Tamat Tempoh"),
     "expiringSoon": MessageLookupByLibrary.simpleMessage("Akan Luput"),
     "expiryDate": MessageLookupByLibrary.simpleMessage("Tarikh Luput"),
     "expiryDateHint": MessageLookupByLibrary.simpleMessage(
@@ -106,6 +116,10 @@ class MessageLookup extends MessageLookupByLibrary {
     "failed": MessageLookupByLibrary.simpleMessage("Gagal"),
     "favorite": MessageLookupByLibrary.simpleMessage("Kegemaran"),
     "forgotPassword": MessageLookupByLibrary.simpleMessage("Lupa Kata Laluan?"),
+    "foundInCabinet": MessageLookupByLibrary.simpleMessage(
+      "Ditemui di dalam kabinet",
+    ),
+    "googleAccount": MessageLookupByLibrary.simpleMessage("Akaun Google"),
     "guestUser": MessageLookupByLibrary.simpleMessage("Pengguna Tetamu"),
     "hasAccount": MessageLookupByLibrary.simpleMessage("Sudah ada akaun?"),
     "helpSupport": MessageLookupByLibrary.simpleMessage("Bantuan & Sokongan"),
@@ -113,6 +127,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "home": MessageLookupByLibrary.simpleMessage("Utama"),
     "info": MessageLookupByLibrary.simpleMessage("Maklumat"),
     "insideCabinet": MessageLookupByLibrary.simpleMessage("Di Dalam Kabinet"),
+    "iotAndHardware": MessageLookupByLibrary.simpleMessage("IoT & Perkakasan"),
     "itemDescriptionHint": MessageLookupByLibrary.simpleMessage(
       "Penerangan pilihan",
     ),
@@ -133,6 +148,7 @@ class MessageLookup extends MessageLookupByLibrary {
     "locationPermission": MessageLookupByLibrary.simpleMessage(
       "Kebenaran lokasi diperlukan untuk imbasan BLE.",
     ),
+    "loggedIn": MessageLookupByLibrary.simpleMessage("Telah Log Masuk"),
     "login": MessageLookupByLibrary.simpleMessage("Log Masuk"),
     "logout": MessageLookupByLibrary.simpleMessage("Log Keluar"),
     "lowStock": MessageLookupByLibrary.simpleMessage("Stok Rendah"),
@@ -141,6 +157,7 @@ class MessageLookup extends MessageLookupByLibrary {
     ),
     "lowerDoor": MessageLookupByLibrary.simpleMessage("Pintu Bawah"),
     "malay": MessageLookupByLibrary.simpleMessage("Bahasa Melayu"),
+    "manageCabinets": MessageLookupByLibrary.simpleMessage("Urus Kabinet"),
     "manageCategories": MessageLookupByLibrary.simpleMessage("Urus Kategori"),
     "manageTags": MessageLookupByLibrary.simpleMessage("Urus Tag"),
     "medicineInfo": MessageLookupByLibrary.simpleMessage("Maklumat Ubat"),
@@ -152,8 +169,12 @@ class MessageLookup extends MessageLookupByLibrary {
     "next": MessageLookupByLibrary.simpleMessage("Seterusnya"),
     "no": MessageLookupByLibrary.simpleMessage("Tidak"),
     "noAccount": MessageLookupByLibrary.simpleMessage("Tiada akaun?"),
+    "noAlerts": MessageLookupByLibrary.simpleMessage(
+      "Tiada barang tamat tempoh, akan tamat tempoh atau stok rendah",
+    ),
     "noBox": MessageLookupByLibrary.simpleMessage("Tiada Kotak"),
     "noCabinet": MessageLookupByLibrary.simpleMessage("Tiada Kabinet"),
+    "noCategories": MessageLookupByLibrary.simpleMessage("Tiada Kategori"),
     "noData": MessageLookupByLibrary.simpleMessage("Tiada data"),
     "noDevicesFound": MessageLookupByLibrary.simpleMessage(
       "Tiada peranti dijumpai",
@@ -171,12 +192,20 @@ class MessageLookup extends MessageLookupByLibrary {
     "notificationPermission": MessageLookupByLibrary.simpleMessage(
       "Kebenaran pemberitahuan diperlukan untuk amaran.",
     ),
+    "notificationSettings": MessageLookupByLibrary.simpleMessage(
+      "Tetapan Pemberitahuan",
+    ),
     "notifications": MessageLookupByLibrary.simpleMessage("Pemberitahuan"),
     "ok": MessageLookupByLibrary.simpleMessage("OK"),
+    "open": MessageLookupByLibrary.simpleMessage("Buka"),
+    "otherMatches": MessageLookupByLibrary.simpleMessage("Padanan lain"),
     "outOfStock": MessageLookupByLibrary.simpleMessage("Kehabisan Stok"),
     "password": MessageLookupByLibrary.simpleMessage("Kata Laluan"),
     "permissionRequired": MessageLookupByLibrary.simpleMessage(
       "Kebenaran Diperlukan",
+    ),
+    "pickVoiceLanguage": MessageLookupByLibrary.simpleMessage(
+      "Pilih bahasa di atas, kemudian tekan 🎤 untuk cari melalui suara",
     ),
     "productionDate": MessageLookupByLibrary.simpleMessage(
       "Tarikh Pengeluaran",
@@ -188,6 +217,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "quantity": MessageLookupByLibrary.simpleMessage("Kuantiti"),
     "quantityHint": MessageLookupByLibrary.simpleMessage("Masukkan kuantiti"),
     "register": MessageLookupByLibrary.simpleMessage("Daftar"),
+    "relatedInformation": MessageLookupByLibrary.simpleMessage(
+      "Maklumat Berkaitan",
+    ),
     "remove": MessageLookupByLibrary.simpleMessage("Buang"),
     "reports": MessageLookupByLibrary.simpleMessage("Laporan"),
     "retry": MessageLookupByLibrary.simpleMessage("Cuba Semula"),
@@ -197,6 +229,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "scanDevice": MessageLookupByLibrary.simpleMessage("Imbas Peranti"),
     "scanning": MessageLookupByLibrary.simpleMessage("Mengimbas..."),
     "search": MessageLookupByLibrary.simpleMessage("Cari"),
+    "searchAnyLanguage": MessageLookupByLibrary.simpleMessage(
+      "Cari dalam mana-mana bahasa",
+    ),
     "searchHint": MessageLookupByLibrary.simpleMessage("Cari barang..."),
     "selectBox": MessageLookupByLibrary.simpleMessage("Pilih Kotak"),
     "selectCabinet": MessageLookupByLibrary.simpleMessage("Pilih Kabinet"),
@@ -211,6 +246,9 @@ class MessageLookup extends MessageLookupByLibrary {
     "smartCabinetControl": MessageLookupByLibrary.simpleMessage(
       "Kawalan Kabinet Pintar",
     ),
+    "smartCabinetFinder": MessageLookupByLibrary.simpleMessage(
+      "Pencari Kabinet Pintar",
+    ),
     "status": MessageLookupByLibrary.simpleMessage("Status"),
     "success": MessageLookupByLibrary.simpleMessage("Berjaya"),
     "syncInventory": MessageLookupByLibrary.simpleMessage(
@@ -224,13 +262,25 @@ class MessageLookup extends MessageLookupByLibrary {
     "takeOut": MessageLookupByLibrary.simpleMessage("Ambil"),
     "taken": MessageLookupByLibrary.simpleMessage("Diambil"),
     "takenBy": MessageLookupByLibrary.simpleMessage("Diambil Oleh"),
+    "tapAiSearch": MessageLookupByLibrary.simpleMessage(
+      "Tekan ✨ untuk carian pintar AI",
+    ),
+    "tools": MessageLookupByLibrary.simpleMessage("Alat"),
+    "tryAiSmartSearch": MessageLookupByLibrary.simpleMessage(
+      "Cuba Carian Pintar AI",
+    ),
+    "typeSearchExample": MessageLookupByLibrary.simpleMessage(
+      "Taip 头痛, sakit kepala, headache…",
+    ),
     "unit": MessageLookupByLibrary.simpleMessage("Unit"),
     "unitHint": MessageLookupByLibrary.simpleMessage("Pilih unit"),
     "update": MessageLookupByLibrary.simpleMessage("Kemas Kini"),
     "upperDoor": MessageLookupByLibrary.simpleMessage("Pintu Atas"),
     "used": MessageLookupByLibrary.simpleMessage("Digunakan"),
+    "verified": MessageLookupByLibrary.simpleMessage("Disahkan"),
     "warning": MessageLookupByLibrary.simpleMessage("Amaran"),
     "welcome": MessageLookupByLibrary.simpleMessage("Selamat Datang!"),
+    "whereToBuy": MessageLookupByLibrary.simpleMessage("Di Mana Untuk Membeli"),
     "withdraw": MessageLookupByLibrary.simpleMessage("Ambil"),
     "yes": MessageLookupByLibrary.simpleMessage("Ya"),
   };

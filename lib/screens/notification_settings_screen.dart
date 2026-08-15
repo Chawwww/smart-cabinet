@@ -1,6 +1,7 @@
 // lib/screens/notification_settings_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../l10n/l10n.dart';
 import '../providers/auth_provider.dart';
 import '../services/notification_manager.dart';
 
@@ -57,9 +58,8 @@ class _NotificationSettingsScreenState
     final userId = context.read<AuthProvider>().currentUser?.id;
     if (userId == null) return;
 
-    final days = _useCustom
-        ? int.tryParse(_customCtrl.text.trim())
-        : _selectedDays;
+    final days =
+        _useCustom ? int.tryParse(_customCtrl.text.trim()) : _selectedDays;
 
     if (days == null || days < 1) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -73,7 +73,8 @@ class _NotificationSettingsScreenState
     if (mounted) {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✅ You\'ll be alerted $days day(s) before expiry')),
+        SnackBar(
+            content: Text('✅ You\'ll be alerted $days day(s) before expiry')),
       );
     }
   }
@@ -83,11 +84,13 @@ class _NotificationSettingsScreenState
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = textColor.withValues(alpha: 0.55);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final s = S.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Notification Settings')),
+      appBar: AppBar(title: Text(s.settings)),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF4ECDC4)))
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF4ECDC4)))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -119,7 +122,8 @@ class _NotificationSettingsScreenState
                     return ChoiceChip(
                       label: Text('$d day${d == 1 ? '' : 's'}'),
                       selected: sel,
-                      selectedColor: const Color(0xFF4ECDC4).withValues(alpha: 0.25),
+                      selectedColor:
+                          const Color(0xFF4ECDC4).withValues(alpha: 0.25),
                       onSelected: (_) => setState(() {
                         _useCustom = false;
                         _selectedDays = d;
@@ -133,7 +137,8 @@ class _NotificationSettingsScreenState
                 ChoiceChip(
                   label: const Text('Custom'),
                   selected: _useCustom,
-                  selectedColor: const Color(0xFF4ECDC4).withValues(alpha: 0.25),
+                  selectedColor:
+                      const Color(0xFF4ECDC4).withValues(alpha: 0.25),
                   onSelected: (_) => setState(() => _useCustom = true),
                 ),
                 if (_useCustom) ...[
@@ -145,7 +150,8 @@ class _NotificationSettingsScreenState
                       labelText: 'Days before expiry',
                       hintText: 'e.g. 10',
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF2D2D2D) : Colors.white,
+                      fillColor:
+                          isDark ? const Color(0xFF2D2D2D) : Colors.white,
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
@@ -163,7 +169,8 @@ class _NotificationSettingsScreenState
                   ),
                   child: _isSaving
                       ? const SizedBox(
-                          width: 20, height: 20,
+                          width: 20,
+                          height: 20,
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
                       : const Text('Save'),

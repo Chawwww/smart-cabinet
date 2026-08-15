@@ -299,7 +299,7 @@ class _MenuScreenState extends State<MenuScreen> {
                           Text(
                             user?.email ??
                                 (authProvider.isLoggedIn
-                                    ? 'Logged In'
+                                    ? s.loggedIn
                                     : s.guestUser),
                             style: TextStyle(
                               fontSize: 14,
@@ -308,7 +308,7 @@ class _MenuScreenState extends State<MenuScreen> {
                           ),
                           if (authProvider.isLoggedIn && user?.avatar != null)
                             Text(
-                              '✓ Google Account',
+                              '✓ ${s.googleAccount}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: const Color(0xFF4ECDC4),
@@ -318,7 +318,7 @@ class _MenuScreenState extends State<MenuScreen> {
                           if (authProvider.isLoggedIn &&
                               user?.emailVerified == true)
                             Text(
-                              '✓ Verified',
+                              '✓ ${s.verified}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.green,
@@ -394,7 +394,7 @@ class _MenuScreenState extends State<MenuScreen> {
             _menuItem(
               context,
               icon: Icons.cabin_outlined,
-              title: 'Manage Cabinets',
+              title: s.manageCabinets,
               subtitle:
                   '${cabinetProvider.ownedCabinets.length} owned • ${cabinetProvider.sharedCabinets.length} shared',
               badge: cabinetProvider.ownedCabinets.isNotEmpty
@@ -430,7 +430,7 @@ class _MenuScreenState extends State<MenuScreen> {
             const SizedBox(height: 8),
 
             // ── Section: AI & Features ──────────────────────
-            _sectionHeader('AI & Features', textColor),
+            _sectionHeader(s.aiAndFeatures, textColor),
 
             _menuItem(
               context,
@@ -469,7 +469,7 @@ class _MenuScreenState extends State<MenuScreen> {
             const SizedBox(height: 8),
 
             // ── Section: Tools ───────────────────────────────
-            _sectionHeader('Tools', textColor),
+            _sectionHeader(s.tools, textColor),
 
             _menuItem(
               context,
@@ -493,7 +493,7 @@ class _MenuScreenState extends State<MenuScreen> {
             _menuItem(
               context,
               icon: Icons.local_offer_outlined,
-              title: 'Manage Tags',
+              title: s.manageTags,
               onTap: () => _manageTags(context),
             ),
 
@@ -508,12 +508,12 @@ class _MenuScreenState extends State<MenuScreen> {
             const SizedBox(height: 8),
 
             // ── Section: IoT ─────────────────────────────────
-            _sectionHeader('IoT & Hardware', textColor),
+            _sectionHeader(s.iotAndHardware, textColor),
 
             _menuItem(
               context,
               icon: Icons.bluetooth,
-              title: 'Smart Cabinet Control',
+              title: s.smartCabinetControl,
               badge: '🔵 BLE',
               onTap: () => Navigator.push(
                 context,
@@ -526,7 +526,7 @@ class _MenuScreenState extends State<MenuScreen> {
             _menuItem(
               context,
               icon: Icons.people_outline,
-              title: 'Shared Cabinets',
+              title: s.sharedCabinets,
               subtitle:
                   '${cabinetProvider.sharedCabinets.length} cabinets shared with you',
               badge: cabinetProvider.sharedCabinets.isNotEmpty
@@ -581,8 +581,8 @@ class _MenuScreenState extends State<MenuScreen> {
             _menuItem(
               context,
               icon: Icons.notifications_outlined,
-              title: 'Notification Settings',
-              subtitle: 'Configure expiry reminders and alerts',
+              title: s.notificationSettings,
+              subtitle: s.languageSaved,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -619,7 +619,8 @@ class _MenuScreenState extends State<MenuScreen> {
                 trailing: Switch(
                   value: themeProvider.isDarkMode,
                   onChanged: (_) => themeProvider.toggleTheme(),
-                  activeColor: const Color(0xFF4ECDC4),
+                  activeThumbColor: const Color(0xFF4ECDC4),
+                  activeTrackColor: const Color(0xFF4ECDC4).withValues(alpha: 0.35),
                 ),
                 onTap: () => themeProvider.toggleTheme(),
               ),
@@ -664,7 +665,7 @@ class _MenuScreenState extends State<MenuScreen> {
               child: Column(
                 children: [
                   Text(
-                    'Smart Cabinet Finder',
+                    s.smartCabinetFinder,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
