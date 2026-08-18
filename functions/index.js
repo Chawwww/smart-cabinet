@@ -11,7 +11,7 @@
 
 const { onValueCreated } = require("firebase-functions/v2/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
@@ -76,8 +76,89 @@ exports.createCabinetInvite = onCall({ region: "us-central1" }, async (request) 
   if (!cabinet.exists || cabinet.data().userId !== ownerId) throw new HttpsError("permission-denied", "Only the owner can create an invite.");
   const invite = db.collection("cabinet_invites").doc();
   await invite.set({ cabinetId, ownerId, permission, createdAt: FieldValue.serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000), acceptedBy: null });
-  return { inviteId: invite.id, link: `smartcabinet://join?invite=${invite.id}` };
+  const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT;
+  const link = `https://us-central1-${projectId}.cloudfunctions.net/viewCabinetInvite?invite=${invite.id}`;
+  return { inviteId: invite.id, link };
 });
+
+// Public, read-only cabinet preview for people who do not have the app.
+// Possession of the random invite URL is the authorization. The preview stops
+// working when the invite expires, is revoked, or is accepted in the app.
+exports.viewCabinetInvite = onRequest(
+  { region: "us-central1", cors: false },
+  async (request, response) => {
+    response.set("Cache-Control", "private, no-store, max-age=0");
+    response.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    response.set("X-Content-Type-Options", "nosniff");
+
+    const escapeHtml = (value) => String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+    const renderPage = ({ title, body, status = 200 }) => response
+      .status(status)
+      .type("html")
+      .send(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>${escapeHtml(title)} · Smart Cabinet</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7f8;color:#263238;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:auto;padding:24px 16px 48px}.brand{color:#168f88;font-weight:800;letter-spacing:.3px}
+.card{background:#fff;border-radius:18px;padding:22px;margin-top:18px;box-shadow:0 8px 30px #173b3a16}h1{font-size:28px;margin:8px 0}h2{font-size:17px;margin:24px 0 10px}.muted{color:#667577}.item{display:flex;gap:12px;align-items:center;border-top:1px solid #edf0f1;padding:14px 0}.item:first-child{border-top:0}.icon{font-size:26px;width:38px;text-align:center}.grow{flex:1}.name{font-weight:700}.pill{background:#e2f7f5;color:#087b75;border-radius:99px;padding:5px 9px;font-size:12px;font-weight:700}.warning{background:#fff4df;color:#8a5700;padding:12px;border-radius:10px}.button{display:inline-block;margin-top:16px;background:#20aaa2;color:#fff;text-decoration:none;padding:11px 16px;border-radius:10px;font-weight:700}
+</style></head><body><main><div class="brand">SMART CABINET</div>${body}</main></body></html>`);
+
+    try {
+      const inviteId = typeof request.query.invite === "string" ? request.query.invite.trim() : "";
+      if (!/^[A-Za-z0-9_-]{10,200}$/.test(inviteId)) {
+        return renderPage({ title: "Invalid invitation", status: 400, body: '<div class="card"><h1>Invalid invitation</h1><p class="muted">This QR code or invitation link is not valid.</p></div>' });
+      }
+
+      const inviteSnapshot = await db.collection("cabinet_invites").doc(inviteId).get();
+      if (!inviteSnapshot.exists) {
+        return renderPage({ title: "Invitation unavailable", status: 404, body: '<div class="card"><h1>Invitation unavailable</h1><p class="muted">It may have been revoked.</p></div>' });
+      }
+
+      const invite = inviteSnapshot.data();
+      const expiresAt = invite.expiresAt instanceof Timestamp ? invite.expiresAt.toMillis() : 0;
+      if (invite.acceptedBy || expiresAt <= Date.now()) {
+        return renderPage({ title: "Invitation expired", status: 410, body: '<div class="card"><h1>Invitation expired</h1><p class="muted">Ask the cabinet owner to create a new invitation.</p></div>' });
+      }
+
+      const [cabinetSnapshot, itemsSnapshot] = await Promise.all([
+        db.collection("cabinets").doc(invite.cabinetId).get(),
+        db.collection("items").where("cabinetId", "==", invite.cabinetId).get(),
+      ]);
+      if (!cabinetSnapshot.exists || cabinetSnapshot.data().userId !== invite.ownerId) {
+        return renderPage({ title: "Cabinet unavailable", status: 404, body: '<div class="card"><h1>Cabinet unavailable</h1><p class="muted">The cabinet no longer exists.</p></div>' });
+      }
+
+      const cabinet = cabinetSnapshot.data();
+      const items = itemsSnapshot.docs.map((document) => document.data())
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+      const itemHtml = items.length === 0
+        ? '<p class="muted">This cabinet is currently empty.</p>'
+        : items.map((item) => {
+          const quantity = Number.isFinite(item.quantity) ? item.quantity : 0;
+          const expiry = item.expiryDate instanceof Timestamp
+            ? `<div class="muted">Expires ${escapeHtml(item.expiryDate.toDate().toLocaleDateString("en-MY"))}</div>`
+            : "";
+          return `<div class="item"><div class="icon">${escapeHtml(item.icon || "📦")}</div><div class="grow"><div class="name">${escapeHtml(item.name || "Unnamed item")}</div>${expiry}</div><div class="pill">${escapeHtml(quantity)} ${escapeHtml(item.unit || "pcs")}</div></div>`;
+        }).join("");
+      const deepLink = `smartcabinet://join?invite=${encodeURIComponent(inviteId)}`;
+
+      return renderPage({
+        title: cabinet.name || "Shared cabinet",
+        body: `<div class="card"><div class="muted">Read-only shared cabinet</div><h1>${escapeHtml(cabinet.icon || "🗄️")} ${escapeHtml(cabinet.name || "Cabinet")}</h1><p>${escapeHtml(cabinet.description || "")}</p>${cabinet.location ? `<p class="muted">📍 ${escapeHtml(cabinet.location)}</p>` : ""}<div class="warning">Anyone with this link can view this preview until it expires. It does not allow editing.</div><h2>Contents (${items.length})</h2>${itemHtml}<a class="button" href="${deepLink}">Open in Smart Cabinet app</a><p class="muted">Invitation expires ${escapeHtml(new Date(expiresAt).toLocaleString("en-MY"))}.</p></div>`,
+      });
+    } catch (error) {
+      console.error("viewCabinetInvite error:", error);
+      return renderPage({ title: "Unable to load cabinet", status: 500, body: '<div class="card"><h1>Unable to load cabinet</h1><p class="muted">Please try again later.</p></div>' });
+    }
+  }
+);
 
 exports.acceptCabinetInvite = onCall({ region: "us-central1" }, async (request) => {
   const memberId = requireAuth(request);

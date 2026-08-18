@@ -26,8 +26,7 @@ service cloud.firestore {
     }
 
     function isSharedWithMe(data) {
-      return data.sharedWith is list 
-          && request.auth.uid in data.sharedWith;
+      return isAuth() && request.auth.uid in data.sharedWith;
     }
 
     function canReadCabinetData(data) {
@@ -114,7 +113,7 @@ service cloud.firestore {
       allow get: if canReadCabinetData(resource.data);
       allow list: if isAuth() && (
         resource.data.userId == request.auth.uid ||
-        (resource.data.sharedWith is list && request.auth.uid in resource.data.sharedWith)
+        request.auth.uid in resource.data.sharedWith
       );
       
       allow create: if writingAsOwner() 

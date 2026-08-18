@@ -172,7 +172,9 @@ class AuthService {
         await _createUserDocument(
           uid: userCredential.user!.uid,
           email: userCredential.user!.email ?? googleUser.email,
-          name: userCredential.user!.displayName ?? googleUser.displayName ?? 'User',
+          name: userCredential.user!.displayName ??
+              googleUser.displayName ??
+              'User',
           avatar: userCredential.user!.photoURL,
         );
       }
@@ -376,7 +378,8 @@ class AuthService {
   }) async {
     final userData = {
       'uid': uid,
-      'email': email,
+      // Cabinet sharing looks users up by email, so store one canonical form.
+      'email': email.trim().toLowerCase(),
       'name': name,
       'avatar': avatar,
       'emailVerified': false,

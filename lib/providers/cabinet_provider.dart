@@ -292,7 +292,8 @@ class CabinetProvider extends ChangeNotifier {
 
       final updatedCabinet = cabinet.copyWith(
         sharedWith: cabinet.sharedWith.where((id) => id != userId).toList(),
-        permissions: cabinet.permissions..remove(userId),
+        permissions: Map<String, String>.from(cabinet.permissions)
+          ..remove(userId),
         updatedAt: DateTime.now(),
       );
 

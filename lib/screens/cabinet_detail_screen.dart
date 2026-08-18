@@ -8,8 +8,7 @@ import '../providers/item_provider.dart';
 import '../screens/share_cabinet_screen.dart';
 import '../screens/add_edit_box_screen.dart';
 import '../widgets/empty_state.dart';
-import '../widgets/loading_widget.dart';
-import 'item_detail_screen.dart';  // ← ItemDetailScreen
+import 'item_detail_screen.dart'; // ← ItemDetailScreen
 import 'add_edit_item_screen.dart'; // ← AddEditItemScreen
 
 class CabinetDetailScreen extends StatefulWidget {
@@ -34,7 +33,7 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
     final cabinetProvider = context.watch<CabinetProvider>();
     final authProvider = context.watch<AuthProvider>();
     final itemProvider = context.watch<ItemProvider>();
-    
+
     final cabinet = cabinetProvider.getCabinetById(widget.cabinetId);
     if (cabinet == null) {
       return const Scaffold(
@@ -44,9 +43,10 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
 
     final isOwner = cabinet.userId == authProvider.userId;
     final permission = cabinet.getPermission(authProvider.userId);
-    final items = itemProvider.items.where((item) => 
-      item.cabinetId == cabinet.id
-    ).toList();
+    final canEdit = cabinet.canEdit(authProvider.userId);
+    final items = itemProvider.items
+        .where((item) => item.cabinetId == cabinet.id)
+        .toList();
 
     // Get boxes for this cabinet
     final boxes = cabinetProvider.getBoxesForCabinet(cabinet.id!);
@@ -75,7 +75,6 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
               ),
               tooltip: 'Share Cabinet',
             ),
-          
           if (!isOwner && cabinet.hasAccess(authProvider.userId))
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -153,13 +152,13 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
                         _statChip(Icons.location_on, cabinet.location!),
                     ],
                   ),
-                  
                   if (isOwner && cabinet.sharedWith.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: Row(
                         children: [
-                          const Icon(Icons.people, size: 16, color: Color(0xFF4ECDC4)),
+                          const Icon(Icons.people,
+                              size: 16, color: Color(0xFF4ECDC4)),
                           const SizedBox(width: 4),
                           Text(
                             'Shared with ${cabinet.sharedWith.length} user(s)',
@@ -171,7 +170,6 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
                         ],
                       ),
                     ),
-                  
                   if (isOwner)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -187,7 +185,8 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
                               ),
                             ),
                           ),
-                          icon: const Icon(Icons.share_outlined, color: Color(0xFF4ECDC4)),
+                          icon: const Icon(Icons.share_outlined,
+                              color: Color(0xFF4ECDC4)),
                           label: const Text(
                             'Share Cabinet',
                             style: TextStyle(color: Color(0xFF4ECDC4)),
@@ -207,78 +206,84 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
           ),
 
           // ── Action Buttons Row ──
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                // Add Item Button
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AddEditItemScreen(),
-                        ),
-                      );
-                      if (result == true) {
-                        context.read<ItemProvider>().loadItems();
-                      }
-                    },
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add Item'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4ECDC4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                // Add Box Button
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddEditBoxScreen(
-                            presetCabinetId: cabinet.id,
+          if (canEdit)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  // Add Item Button
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AddEditItemScreen(),
                           ),
+                        );
+                        if (!context.mounted) return;
+                        if (result == true) {
+                          context.read<ItemProvider>().loadItems();
+                        }
+                      },
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add Item'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4ECDC4),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      );
-                      if (result == true) {
-                        context.read<CabinetProvider>().loadBoxes();
-                      }
-                    },
-                    icon: const Icon(Icons.folder_open, size: 16),
-                    label: const Text('Add Box'),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF4ECDC4)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  // Add Box Button
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AddEditBoxScreen(
+                              presetCabinetId: cabinet.id,
+                            ),
+                          ),
+                        );
+                        if (!context.mounted) return;
+                        if (result == true) {
+                          context.read<CabinetProvider>().loadBoxes();
+                        }
+                      },
+                      icon: const Icon(Icons.folder_open, size: 16),
+                      label: const Text('Add Box'),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF4ECDC4)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
 
           const SizedBox(height: 8),
 
           // ── Items Grid ──
           Expanded(
             child: items.isEmpty
-                ? const EmptyState(
+                ? EmptyState(
                     icon: Icons.inventory_2_outlined,
                     title: 'No Items',
-                    subtitle: 'This cabinet is empty. Add your first item!',
+                    subtitle: canEdit
+                        ? 'This cabinet is empty. Add your first item!'
+                        : 'This cabinet is empty.',
                   )
                 : GridView.builder(
                     padding: const EdgeInsets.all(16),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       childAspectRatio: 0.78,
                       crossAxisSpacing: 12,
@@ -305,7 +310,7 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
   }
 
   // ── Helper Functions ──
-  
+
   Widget _statChip(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -332,19 +337,27 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
 
   String _getPermissionLabel(String permission) {
     switch (permission) {
-      case 'view': return 'View Only';
-      case 'edit': return 'Edit';
-      case 'admin': return 'Admin';
-      default: return 'View';
+      case 'view':
+        return 'View Only';
+      case 'edit':
+        return 'Edit';
+      case 'admin':
+        return 'Admin';
+      default:
+        return 'View';
     }
   }
 
   Color _getPermissionColor(String permission) {
     switch (permission) {
-      case 'view': return const Color(0xFF636E72);
-      case 'edit': return const Color(0xFF4ECDC4);
-      case 'admin': return const Color(0xFF6C5CE7);
-      default: return const Color(0xFF636E72);
+      case 'view':
+        return const Color(0xFF636E72);
+      case 'edit':
+        return const Color(0xFF4ECDC4);
+      case 'admin':
+        return const Color(0xFF6C5CE7);
+      default:
+        return const Color(0xFF636E72);
     }
   }
 }
@@ -372,7 +385,8 @@ class _ItemCard extends StatelessWidget {
       accent = const Color(0xFF4ECDC4);
     }
 
-    final hasPhoto = item.imageUrls.isNotEmpty && item.imageUrls.first.isNotEmpty;
+    final hasPhoto =
+        item.imageUrls.isNotEmpty && item.imageUrls.first.isNotEmpty;
 
     return GestureDetector(
       onTap: onTap,
@@ -396,13 +410,15 @@ class _ItemCard extends StatelessWidget {
               child: Stack(
                 children: [
                   ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(14)),
                     child: SizedBox.expand(
                       child: hasPhoto
                           ? Image.network(
                               item.imageUrls.first,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => _emojiBox(accent, isDark),
+                              errorBuilder: (_, __, ___) =>
+                                  _emojiBox(accent, isDark),
                               loadingBuilder: (_, child, prog) {
                                 if (prog == null) return child;
                                 return _emojiBox(accent, isDark);
@@ -413,7 +429,8 @@ class _ItemCard extends StatelessWidget {
                   ),
                   if (item.isFavorite)
                     Positioned(
-                      top: 6, left: 6,
+                      top: 6,
+                      left: 6,
                       child: Container(
                         padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
@@ -425,12 +442,15 @@ class _ItemCard extends StatelessWidget {
                       ),
                     ),
                   Positioned(
-                    top: 6, right: 6,
+                    top: 6,
+                    right: 6,
                     child: _badge(),
                   ),
                   if (item.status == 'taken')
                     Positioned(
-                      bottom: 0, left: 0, right: 0,
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 3),
                         color: Colors.black.withValues(alpha: 0.55),
@@ -508,9 +528,8 @@ class _ItemCard extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
-                              color: item.isExpired
-                                  ? Colors.red
-                                  : Colors.orange,
+                              color:
+                                  item.isExpired ? Colors.red : Colors.orange,
                             ),
                           ),
                       ],
@@ -528,8 +547,7 @@ class _ItemCard extends StatelessWidget {
   Widget _emojiBox(Color accent, bool isDark) => Container(
         color: accent.withValues(alpha: isDark ? 0.18 : 0.1),
         child: Center(
-          child: Text(item.icon ?? '📦',
-              style: const TextStyle(fontSize: 40)),
+          child: Text(item.icon ?? '📦', style: const TextStyle(fontSize: 40)),
         ),
       );
 

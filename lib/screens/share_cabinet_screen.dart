@@ -189,6 +189,10 @@ class _ShareCabinetScreenState extends State<ShareCabinetScreen> {
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             QrImageView(data: link, size: 220),
             const SizedBox(height: 12),
+            const Text(
+                'Scan to view this cabinet securely in a web browser. The app is not required.',
+                textAlign: TextAlign.center),
+            const SizedBox(height: 8),
             const Text('The invite expires in 7 days and can be used once.',
                 textAlign: TextAlign.center),
             const SizedBox(height: 10),

@@ -84,6 +84,8 @@ class FirestoreService {
     bool sharedLoaded = false;
     List<CabinetModel> ownedCabinets = [];
     List<CabinetModel> sharedCabinets = [];
+    StreamSubscription? ownedSubscription;
+    StreamSubscription? sharedSubscription;
 
     void checkAndEmit() {
       if (ownedLoaded && sharedLoaded) {
@@ -105,10 +107,9 @@ class FirestoreService {
     }
 
     // Listen to owned cabinets
-    _firestore
+    ownedSubscription = _firestore
         .collection(AppConstants.cabinetsCollection)
         .where('userId', isEqualTo: _userId)
-        .orderBy('name')
         .snapshots()
         .listen(
       (snapshot) {
@@ -119,16 +120,17 @@ class FirestoreService {
         checkAndEmit();
       },
       onError: (error) {
+        log('Error loading owned cabinets: $error');
         ownedLoaded = true;
         checkAndEmit();
+        controller.addError(error);
       },
     );
 
     // Listen to shared cabinets
-    _firestore
+    sharedSubscription = _firestore
         .collection(AppConstants.cabinetsCollection)
         .where('sharedWith', arrayContains: _userId)
-        .orderBy('name')
         .snapshots()
         .listen(
       (snapshot) {
@@ -139,10 +141,17 @@ class FirestoreService {
         checkAndEmit();
       },
       onError: (error) {
+        log('Error loading shared cabinets: $error');
         sharedLoaded = true;
         checkAndEmit();
+        controller.addError(error);
       },
     );
+
+    controller.onCancel = () async {
+      await ownedSubscription?.cancel();
+      await sharedSubscription?.cancel();
+    };
 
     return controller.stream;
   }
@@ -156,12 +165,12 @@ class FirestoreService {
     return _firestore
         .collection(AppConstants.cabinetsCollection)
         .where('userId', isEqualTo: _userId)
-        .orderBy('name')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => CabinetModel.fromFirestore(doc))
-          .toList();
+      final cabinets =
+          snapshot.docs.map((doc) => CabinetModel.fromFirestore(doc)).toList();
+      cabinets.sort((a, b) => a.name.compareTo(b.name));
+      return cabinets;
     });
   }
 
@@ -173,12 +182,12 @@ class FirestoreService {
     return _firestore
         .collection(AppConstants.cabinetsCollection)
         .where('sharedWith', arrayContains: _userId)
-        .orderBy('name')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => CabinetModel.fromFirestore(doc))
-          .toList();
+      final cabinets =
+          snapshot.docs.map((doc) => CabinetModel.fromFirestore(doc)).toList();
+      cabinets.sort((a, b) => a.name.compareTo(b.name));
+      return cabinets;
     });
   }
 
@@ -249,48 +258,58 @@ class FirestoreService {
     }
 
     final controller = StreamController<List<BoxModel>>.broadcast();
+    final boxesById = <String, BoxModel>{};
+    final boxSubscriptions = <StreamSubscription>[];
+    StreamSubscription? cabinetSubscription;
 
-    // First get all cabinet IDs the user has access to
-    _firestore
-        .collection(AppConstants.cabinetsCollection)
-        .where(Filter.or(
-          Filter('userId', isEqualTo: _userId),
-          Filter('sharedWith', arrayContains: _userId),
-        ))
-        .snapshots()
-        .listen(
-      (cabinetSnapshot) async {
-        final cabinetIds = cabinetSnapshot.docs.map((doc) => doc.id).toList();
+    void emit() {
+      final boxes = boxesById.values.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      if (!controller.isClosed) controller.add(boxes);
+    }
 
-        if (cabinetIds.isEmpty) {
-          controller.add([]);
-          return;
-        }
+    Future<void> watchBoxes(List<String> cabinetIds) async {
+      for (final subscription in boxSubscriptions) {
+        await subscription.cancel();
+      }
+      boxSubscriptions.clear();
+      boxesById.clear();
 
-        // Query boxes for all accessible cabinets
-        try {
-          final boxSnapshot = await _firestore
-              .collection(AppConstants.boxesCollection)
-              .where('cabinetId', whereIn: cabinetIds)
-              .orderBy('name')
-              .get();
+      for (var start = 0; start < cabinetIds.length; start += 30) {
+        final end =
+            (start + 30 < cabinetIds.length) ? start + 30 : cabinetIds.length;
+        final ids = cabinetIds.sublist(start, end);
+        final subscription = _firestore
+            .collection(AppConstants.boxesCollection)
+            .where('cabinetId', whereIn: ids)
+            .snapshots()
+            .listen((snapshot) {
+          boxesById.removeWhere((_, box) => ids.contains(box.cabinetId));
+          for (final doc in snapshot.docs) {
+            boxesById[doc.id] = BoxModel.fromFirestore(doc);
+          }
+          emit();
+        }, onError: controller.addError);
+        boxSubscriptions.add(subscription);
+      }
+      emit();
+    }
 
-          final boxes = boxSnapshot.docs
-              .map((doc) => BoxModel.fromFirestore(doc))
-              .toList();
+    controller.onListen = () {
+      cabinetSubscription = getCabinets().listen(
+        (cabinets) => watchBoxes(
+          cabinets.map((cabinet) => cabinet.id).whereType<String>().toList(),
+        ),
+        onError: controller.addError,
+      );
+    };
 
-          log('📦 Boxes loaded: ${boxes.length}');
-          controller.add(boxes);
-        } catch (e) {
-          log('Error loading boxes: $e');
-          controller.add([]);
-        }
-      },
-      onError: (error) {
-        log('Error loading cabinets for boxes: $error');
-        controller.add([]);
-      },
-    );
+    controller.onCancel = () async {
+      await cabinetSubscription?.cancel();
+      for (final subscription in boxSubscriptions) {
+        await subscription.cancel();
+      }
+    };
 
     return controller.stream;
   }
@@ -341,14 +360,87 @@ class FirestoreService {
       return Stream.value([]);
     }
 
-    return _firestore
-        .collection(AppConstants.itemsCollection)
-        .where('userId', isEqualTo: _userId)
-        .orderBy('name')
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => ItemModel.fromFirestore(doc)).toList();
-    });
+    // Items belong to a cabinet as well as to the user who created them.
+    // Loading only by userId hides an owner's items from collaborators and
+    // hides collaborator-created items from the owner. Combine the user's own
+    // items (including unassigned ones) with every item in an accessible
+    // cabinet. Firestore limits whereIn to 30 values, so large accounts are
+    // split into chunks.
+    final controller = StreamController<List<ItemModel>>.broadcast();
+    final ownItems = <String, ItemModel>{};
+    final cabinetItems = <String, ItemModel>{};
+    StreamSubscription? ownSubscription;
+    StreamSubscription? cabinetSubscription;
+    final itemSubscriptions = <StreamSubscription>[];
+
+    void emit() {
+      final combined = <String, ItemModel>{
+        ...ownItems,
+        ...cabinetItems,
+      }.values.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      if (!controller.isClosed) controller.add(combined);
+    }
+
+    Future<void> watchCabinetItems(List<String> cabinetIds) async {
+      for (final subscription in itemSubscriptions) {
+        await subscription.cancel();
+      }
+      itemSubscriptions.clear();
+      cabinetItems.clear();
+
+      for (var start = 0; start < cabinetIds.length; start += 30) {
+        final end =
+            (start + 30 < cabinetIds.length) ? start + 30 : cabinetIds.length;
+        final ids = cabinetIds.sublist(start, end);
+        final subscription = _firestore
+            .collection(AppConstants.itemsCollection)
+            .where('cabinetId', whereIn: ids)
+            .snapshots()
+            .listen((snapshot) {
+          // Remove stale results belonging to this query chunk before adding
+          // its latest snapshot.
+          cabinetItems.removeWhere((_, item) => ids.contains(item.cabinetId));
+          for (final doc in snapshot.docs) {
+            cabinetItems[doc.id] = ItemModel.fromFirestore(doc);
+          }
+          emit();
+        }, onError: controller.addError);
+        itemSubscriptions.add(subscription);
+      }
+      emit();
+    }
+
+    controller.onListen = () {
+      ownSubscription = _firestore
+          .collection(AppConstants.itemsCollection)
+          .where('userId', isEqualTo: _userId)
+          .snapshots()
+          .listen((snapshot) {
+        ownItems
+          ..clear()
+          ..addEntries(snapshot.docs
+              .map((doc) => MapEntry(doc.id, ItemModel.fromFirestore(doc))));
+        emit();
+      }, onError: controller.addError);
+
+      cabinetSubscription = getCabinets().listen(
+        (cabinets) => watchCabinetItems(
+          cabinets.map((cabinet) => cabinet.id).whereType<String>().toList(),
+        ),
+        onError: controller.addError,
+      );
+    };
+
+    controller.onCancel = () async {
+      await ownSubscription?.cancel();
+      await cabinetSubscription?.cancel();
+      for (final subscription in itemSubscriptions) {
+        await subscription.cancel();
+      }
+    };
+
+    return controller.stream;
   }
 
   Stream<List<ItemModel>> getItemsByCabinet(String cabinetId) {
@@ -358,12 +450,13 @@ class FirestoreService {
 
     return _firestore
         .collection(AppConstants.itemsCollection)
-        .where('userId', isEqualTo: _userId)
         .where('cabinetId', isEqualTo: cabinetId)
-        .orderBy('name')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) => ItemModel.fromFirestore(doc)).toList();
+      final items =
+          snapshot.docs.map((doc) => ItemModel.fromFirestore(doc)).toList();
+      items.sort((a, b) => a.name.compareTo(b.name));
+      return items;
     });
   }
 
@@ -530,12 +623,12 @@ class FirestoreService {
     return _firestore
         .collection(AppConstants.categoriesCollection)
         .where('userId', isEqualTo: _userId)
-        .orderBy('name')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => CategoryModel.fromFirestore(doc))
-          .toList();
+      final categories =
+          snapshot.docs.map((doc) => CategoryModel.fromFirestore(doc)).toList();
+      categories.sort((a, b) => a.name.compareTo(b.name));
+      return categories;
     });
   }
 
@@ -683,7 +776,7 @@ class FirestoreService {
         .get();
 
     return snapshot.docs
-        .map((doc) => UserModel.fromMap(doc.data()!, doc.id))
+        .map((doc) => UserModel.fromMap(doc.data(), doc.id))
         .toList();
   }
 
@@ -696,7 +789,7 @@ class FirestoreService {
 
     if (snapshot.docs.isNotEmpty) {
       return UserModel.fromMap(
-          snapshot.docs.first.data()!, snapshot.docs.first.id);
+          snapshot.docs.first.data(), snapshot.docs.first.id);
     }
     return null;
   }
