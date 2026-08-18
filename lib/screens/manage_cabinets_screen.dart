@@ -5,10 +5,10 @@ import '../models/cabinet_model.dart'; // ✅ ADD THIS IMPORT
 import '../providers/cabinet_provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/cabinet_card.dart';
-import '../widgets/empty_state.dart';
 import '../widgets/loading_widget.dart';
 import 'add_edit_cabinet_screen.dart';
 import 'cabinet_detail_screen.dart';
+import '../utils/responsive_layout.dart';
 
 class ManageCabinetsScreen extends StatefulWidget {
   const ManageCabinetsScreen({super.key});
@@ -117,13 +117,14 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
                   action: () => _addCabinet(context),
                 )
               : _buildCabinetGrid(ownedCabinets, authProvider),
-          
+
           // ── Shared Cabinets Tab ──
           sharedCabinets.isEmpty
               ? _buildEmptyState(
                   icon: Icons.people_outline,
                   title: 'No Shared Cabinets',
-                  subtitle: 'When someone shares a cabinet with you, it will appear here',
+                  subtitle:
+                      'When someone shares a cabinet with you, it will appear here',
                   action: null,
                 )
               : _buildCabinetGrid(sharedCabinets, authProvider),
@@ -138,8 +139,9 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
     required String subtitle,
     VoidCallback? action,
   }) {
-    final subColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
-    
+    final subColor =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -188,8 +190,8 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
   ) {
     return GridView.builder(
       padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: Responsive.gridCols(context),
         childAspectRatio: 0.85,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
@@ -197,7 +199,7 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
       itemCount: cabinets.length,
       itemBuilder: (context, index) {
         final cabinet = cabinets[index];
-        
+
         return CabinetCard(
           cabinet: cabinet,
           itemCount: cabinet.itemCount,

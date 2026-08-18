@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/item_provider.dart';
@@ -10,6 +14,7 @@ import '../services/ai_service.dart';
 import '../services/cloud_speech_service.dart';
 import '../widgets/item_card.dart';
 import '../widgets/empty_state.dart';
+import '../utils/responsive_layout.dart';
 import 'item_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -19,14 +24,16 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final _ctrl   = TextEditingController();
+  final _ctrl = TextEditingController();
   final SpeechToText _speech = SpeechToText();
+  final AudioRecorder _recorder = AudioRecorder();
 
-  String _query        = '';
-  bool _isListening    = false;
-  bool _speechReady    = false;
+  String _query = '';
+  bool _isListening = false;
+  bool _isCloudRecording = false;
+  bool _speechReady = false;
   bool _azureAvailable = false;
-  bool _isAiSearching  = false;
+  bool _isAiSearching = false;
   SmartSearchResult? _smartResult;
 
   // ── Voice language selection ──────────────────────────
@@ -58,7 +65,8 @@ class _SearchScreenState extends State<SearchScreen> {
     context.read<ItemProvider>().loadItems();
     AIService().initialize();
 
-    final appLanguageCode = context.read<LanguageProvider>().locale.languageCode;
+    final appLanguageCode =
+        context.read<LanguageProvider>().locale.languageCode;
     _voiceLocale = _appCodeToSpeechLocale[appLanguageCode] ?? 'en_US';
 
     _initSpeech();
@@ -68,7 +76,8 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _checkAzureAvailability() async {
     if (kIsWeb) return;
     try {
-      final available = await CloudSpeechService.instance.isAzureSpeechConfigured();
+      final available =
+          await CloudSpeechService.instance.isAzureSpeechConfigured();
       if (mounted) setState(() => _azureAvailable = available);
     } catch (_) {
       if (mounted) setState(() => _azureAvailable = false);
@@ -81,7 +90,8 @@ class _SearchScreenState extends State<SearchScreen> {
       final ok = await _speech.initialize(
         onError: (_) => setState(() => _isListening = false),
         onStatus: (s) {
-          if (s == SpeechToText.doneStatus || s == SpeechToText.notListeningStatus) {
+          if (s == SpeechToText.doneStatus ||
+              s == SpeechToText.notListeningStatus) {
             setState(() => _isListening = false);
           }
         },
@@ -102,21 +112,32 @@ class _SearchScreenState extends State<SearchScreen> {
     } catch (_) {}
   }
 
-  bool _localeSupported(String localePrefix) => _availableLocales
-      .any((l) => l.localeId.toLowerCase().startsWith(localePrefix.toLowerCase()));
+  bool _localeSupported(String localePrefix) => _availableLocales.any(
+      (l) => l.localeId.toLowerCase().startsWith(localePrefix.toLowerCase()));
 
   @override
   void dispose() {
     _ctrl.dispose();
     if (_speechReady) _speech.stop();
+    _recorder.dispose();
     super.dispose();
   }
 
   // ── Voice toggle ─────────────────────────────────────
   Future<void> _toggleVoice() async {
+    if (_isCloudRecording) {
+      await _finishCloudRecording();
+      return;
+    }
+
     if (!_speechReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone not available. Check permissions.')));
+      if (_azureAvailable) {
+        await _startCloudRecording();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text(
+                'Voice input is unavailable. Check microphone permission or Azure Speech settings.')));
+      }
       return;
     }
     if (_isListening) {
@@ -126,11 +147,15 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     if (!_localeSupported(_voiceLocale.split('_')[0])) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(
-            'Voice input for this language isn\'t installed on your device. '
-            'Add it under your phone\'s language / speech settings, or pick a different language above.')),
-      );
+      if (_azureAvailable) {
+        await _startCloudRecording();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Voice input for this language isn\'t installed on your device. '
+              'Add it under your phone\'s language / speech settings, or pick a different language above.'),
+        ));
+      }
       return;
     }
 
@@ -147,7 +172,7 @@ class _SearchScreenState extends State<SearchScreen> {
         onResult: (result) {
           setState(() {
             _ctrl.text = result.recognizedWords;
-            _query     = result.recognizedWords;
+            _query = result.recognizedWords;
           });
           if (result.finalResult && result.recognizedWords.isNotEmpty) {
             setState(() => _isListening = false);
@@ -160,15 +185,79 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  String get _cloudLanguageCode {
+    if (_voiceLocale.toLowerCase().startsWith('zh')) return 'zh';
+    if (_voiceLocale.toLowerCase().startsWith('ms')) return 'ms';
+    return 'en';
+  }
+
+  Future<void> _startCloudRecording() async {
+    if (!await _recorder.hasPermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Microphone permission is required for voice input.')));
+      }
+      return;
+    }
+    final directory = await getTemporaryDirectory();
+    final path =
+        '${directory.path}/search_voice_${DateTime.now().millisecondsSinceEpoch}.wav';
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 16000,
+        numChannels: 1,
+      ),
+      path: path,
+    );
+    if (mounted) setState(() => _isCloudRecording = true);
+  }
+
+  Future<void> _finishCloudRecording() async {
+    final path = await _recorder.stop();
+    if (mounted) setState(() => _isCloudRecording = false);
+    if (path == null) return;
+    try {
+      final words = await CloudSpeechService.instance
+          .transcribe(File(path), _cloudLanguageCode);
+      if (!mounted) return;
+      if (words.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No speech was recognized.')));
+        return;
+      }
+      setState(() {
+        _ctrl.text = words;
+        _query = words;
+      });
+      await _runAiSearch(words);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cloud voice input failed: $error')));
+      }
+    } finally {
+      await File(path).delete().catchError((_) => File(path));
+    }
+  }
+
   // ── AI Smart Search ───────────────────────────────────
   Future<void> _runAiSearch(String query) async {
     if (query.trim().isEmpty) return;
-    setState(() { _isAiSearching = true; _smartResult = null; });
-    final allNames = context.read<ItemProvider>().items.map((i) => i.name).toList();
+    setState(() {
+      _isAiSearching = true;
+      _smartResult = null;
+    });
+    final allNames =
+        context.read<ItemProvider>().items.map((i) => i.name).toList();
     try {
       final result = await AIService().smartSearch(query, allNames);
       if (!mounted) return;
-      setState(() { _smartResult = result; _isAiSearching = false; });
+      setState(() {
+        _smartResult = result;
+        _isAiSearching = false;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() => _isAiSearching = false);
@@ -181,26 +270,25 @@ class _SearchScreenState extends State<SearchScreen> {
       if (!u.startsWith('http')) u = 'https://$u';
       await launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
     } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open link.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Could not open link.')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final itemProvider = context.watch<ItemProvider>();
-    final isDark   = Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor  = textColor.withValues(alpha: 0.5);
-    final searchBg  = isDark ? const Color(0xFF2D2D2D) : Colors.white;
+    final subColor = textColor.withValues(alpha: 0.5);
+    final searchBg = isDark ? const Color(0xFF2D2D2D) : Colors.white;
 
-    final localResults = _query.isEmpty
-        ? <ItemModel>[]
-        : itemProvider.searchItems(_query);
+    final localResults =
+        _query.isEmpty ? <ItemModel>[] : itemProvider.searchItems(_query);
 
     final aiItems = _smartResult != null
-        ? itemProvider.items.where((item) =>
-            _smartResult!.matchedItemNames.any((name) =>
+        ? itemProvider.items
+            .where((item) => _smartResult!.matchedItemNames.any((name) =>
                 item.name.toLowerCase().contains(name.toLowerCase()) ||
                 name.toLowerCase().contains(item.name.toLowerCase())))
             .toList()
@@ -215,9 +303,12 @@ class _SearchScreenState extends State<SearchScreen> {
             decoration: BoxDecoration(
               color: searchBg,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.07),
-                  blurRadius: 10, offset: const Offset(0, 3))],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.07),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3))
+              ],
             ),
             child: Row(children: [
               const Padding(
@@ -228,10 +319,12 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: TextField(
                   controller: _ctrl,
                   onChanged: (v) => setState(() {
-                    _query       = v;
+                    _query = v;
                     _smartResult = null;
                   }),
-                  onSubmitted: (v) { if (v.trim().isNotEmpty) _runAiSearch(v); },
+                  onSubmitted: (v) {
+                    if (v.trim().isNotEmpty) _runAiSearch(v);
+                  },
                   decoration: InputDecoration(
                     hintText: 'Search in any language… 中文 / BM / English',
                     hintStyle: TextStyle(color: subColor, fontSize: 13),
@@ -245,37 +338,49 @@ class _SearchScreenState extends State<SearchScreen> {
                 IconButton(
                   icon: const Icon(Icons.close, size: 18),
                   onPressed: () => setState(() {
-                    _ctrl.clear(); _query = ''; _smartResult = null;
+                    _ctrl.clear();
+                    _query = '';
+                    _smartResult = null;
                   }),
                 ),
               // Voice button
               if (!kIsWeb)
-                _isListening
+                (_isListening || _isCloudRecording)
                     ? GestureDetector(
                         onTap: _toggleVoice,
                         child: Container(
                           margin: const EdgeInsets.all(8),
-                          width: 32, height: 32,
+                          width: 48,
+                          height: 48,
                           decoration: BoxDecoration(
                               color: Colors.red,
                               borderRadius: BorderRadius.circular(16)),
-                          child: const Icon(Icons.stop, color: Colors.white, size: 16),
+                          child: const Icon(Icons.stop,
+                              color: Colors.white, size: 16),
                         ),
                       )
                     : IconButton(
                         icon: Icon(Icons.mic,
-                            color: _speechReady ? const Color(0xFF4ECDC4) : Colors.grey.shade400,
+                            color: (_speechReady || _azureAvailable)
+                                ? const Color(0xFF4ECDC4)
+                                : Colors.grey.shade400,
                             size: 22),
                         onPressed: _toggleVoice,
                       ),
               // AI search button
               IconButton(
                 icon: _isAiSearching
-                    ? const SizedBox(width: 18, height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4ECDC4)))
-                    : const Icon(Icons.auto_awesome, color: Color(0xFF4ECDC4), size: 20),
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Color(0xFF4ECDC4)))
+                    : const Icon(Icons.auto_awesome,
+                        color: Color(0xFF4ECDC4), size: 20),
                 tooltip: 'AI Smart Search',
-                onPressed: _query.trim().isNotEmpty ? () => _runAiSearch(_query) : null,
+                onPressed: _query.trim().isNotEmpty
+                    ? () => _runAiSearch(_query)
+                    : null,
               ),
             ]),
           ),
@@ -293,10 +398,12 @@ class _SearchScreenState extends State<SearchScreen> {
                 Icon(Icons.language, size: 14, color: subColor),
                 const SizedBox(width: 6),
                 ..._langOptions.map((opt) {
-                  final label    = opt['label']!;
+                  final label = opt['label']!;
                   final localeId = opt['locale']!;
-                  final supported = _localeSupported(localeId.split('_')[0]);
-                  final selected  = _voiceLocale == localeId;
+                  final locallySupported =
+                      _localeSupported(localeId.split('_')[0]);
+                  final supported = locallySupported || _azureAvailable;
+                  final selected = _voiceLocale == localeId;
                   return Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: GestureDetector(
@@ -318,7 +425,8 @@ class _SearchScreenState extends State<SearchScreen> {
                         }
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: selected
                               ? const Color(0xFF4ECDC4).withValues(alpha: 0.15)
@@ -330,13 +438,17 @@ class _SearchScreenState extends State<SearchScreen> {
                                 : subColor.withValues(alpha: 0.3),
                           ),
                         ),
-                        child: Text(label, style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                          color: !supported
-                              ? subColor.withValues(alpha: 0.3)
-                              : (selected ? const Color(0xFF4ECDC4) : subColor),
-                        )),
+                        child: Text(label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w500,
+                              color: !supported
+                                  ? subColor.withValues(alpha: 0.3)
+                                  : (selected
+                                      ? const Color(0xFF4ECDC4)
+                                      : subColor),
+                            )),
                       ),
                     ),
                   );
@@ -366,9 +478,10 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Row(children: [
               const Icon(Icons.cloud, size: 14, color: Color(0xFF00B894)),
               const SizedBox(width: 6),
-              Expanded(child: Text(
-                  'Azure cloud voice fallback is available when local speech packs are missing.',
-                  style: TextStyle(fontSize: 11, color: subColor))),
+              Expanded(
+                  child: Text(
+                      'Azure cloud voice fallback is available when local speech packs are missing.',
+                      style: TextStyle(fontSize: 11, color: subColor))),
             ]),
           ),
 
@@ -381,7 +494,8 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Row(children: [
               const Icon(Icons.translate, size: 13, color: Color(0xFF4ECDC4)),
               const SizedBox(width: 5),
-              Text('${_smartResult!.detectedLanguage} → "${_smartResult!.englishTranslation}"',
+              Text(
+                  '${_smartResult!.detectedLanguage} → "${_smartResult!.englishTranslation}"',
                   style: TextStyle(fontSize: 11, color: subColor)),
             ]),
           ),
@@ -391,15 +505,17 @@ class _SearchScreenState extends State<SearchScreen> {
           child: _query.isEmpty
               ? _emptyState(subColor)
               : _isAiSearching
-                  ? const Center(child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: Color(0xFF4ECDC4)),
-                        SizedBox(height: 16),
-                        Text('AI is searching…'),
-                      ]))
+                  ? const Center(
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                          CircularProgressIndicator(color: Color(0xFF4ECDC4)),
+                          SizedBox(height: 16),
+                          Text('AI is searching…'),
+                        ]))
                   : _smartResult != null
-                      ? _smartResults(aiItems, localResults, textColor, subColor, isDark)
+                      ? _smartResults(
+                          aiItems, localResults, textColor, subColor, isDark)
                       : _localResults(localResults, textColor, subColor),
         ),
       ],
@@ -407,24 +523,28 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _emptyState(Color subColor) => Center(
-    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(Icons.travel_explore, size: 72, color: subColor.withValues(alpha: 0.2)),
-      const SizedBox(height: 16),
-      Text('Search in any language',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: subColor)),
-      const SizedBox(height: 6),
-      Text('Type 头痛, sakit kepala, headache…',
-          style: TextStyle(fontSize: 13, color: subColor)),
-      const SizedBox(height: 4),
-      Text('Tap ✨ for AI smart search',
-          style: TextStyle(fontSize: 12, color: const Color(0xFF4ECDC4).withValues(alpha: 0.9))),
-      if (!kIsWeb && _speechReady) ...[
-        const SizedBox(height: 4),
-        Text('Pick a language above, then tap 🎤 to search by voice',
-            style: TextStyle(fontSize: 12, color: subColor)),
-      ],
-    ]),
-  );
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.travel_explore,
+              size: 72, color: subColor.withValues(alpha: 0.2)),
+          const SizedBox(height: 16),
+          Text('Search in any language',
+              style: TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w600, color: subColor)),
+          const SizedBox(height: 6),
+          Text('Type 头痛, sakit kepala, headache…',
+              style: TextStyle(fontSize: 13, color: subColor)),
+          const SizedBox(height: 4),
+          Text('Tap ✨ for AI smart search',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: const Color(0xFF4ECDC4).withValues(alpha: 0.9))),
+          if (!kIsWeb && _speechReady) ...[
+            const SizedBox(height: 4),
+            Text('Pick a language above, then tap 🎤 to search by voice',
+                style: TextStyle(fontSize: 12, color: subColor)),
+          ],
+        ]),
+      );
 
   Widget _smartResults(List<ItemModel> aiItems, List<ItemModel> localItems,
       Color textColor, Color subColor, bool isDark) {
@@ -449,9 +569,10 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Row(children: [
               const Icon(Icons.info_outline, color: Colors.orange, size: 18),
               const SizedBox(width: 8),
-              Expanded(child: Text(
-                  'Not found in your cabinet. See where to buy below.',
-                  style: TextStyle(fontSize: 13, color: textColor))),
+              Expanded(
+                  child: Text(
+                      'Not found in your cabinet. See where to buy below.',
+                      style: TextStyle(fontSize: 13, color: textColor))),
             ]),
           ),
           const SizedBox(height: 16),
@@ -464,7 +585,8 @@ class _SearchScreenState extends State<SearchScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFF4ECDC4).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF4ECDC4).withValues(alpha: 0.25)),
+              border: Border.all(
+                  color: const Color(0xFF4ECDC4).withValues(alpha: 0.25)),
             ),
             child: Text(result.relatedInfo,
                 style: TextStyle(fontSize: 13, color: textColor, height: 1.6)),
@@ -474,7 +596,8 @@ class _SearchScreenState extends State<SearchScreen> {
         if (result.onlineSuggestions.isNotEmpty) ...[
           _sectionHeader('🛒 Where to Buy', textColor),
           const SizedBox(height: 8),
-          ...result.onlineSuggestions.map((s) => _shopCard(s, textColor, subColor)),
+          ...result.onlineSuggestions
+              .map((s) => _shopCard(s, textColor, subColor)),
           const SizedBox(height: 12),
         ],
         if (localItems.isNotEmpty) ...[
@@ -486,7 +609,8 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _localResults(List<ItemModel> results, Color textColor, Color subColor) {
+  Widget _localResults(
+      List<ItemModel> results, Color textColor, Color subColor) {
     if (results.isEmpty) {
       // ✅ FIXED: Wrapped in SingleChildScrollView to prevent overflow on small screens
       return SingleChildScrollView(
@@ -515,25 +639,29 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _grid(List<ItemModel> items) => GridView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2, childAspectRatio: 0.78,
-      crossAxisSpacing: 12, mainAxisSpacing: 12,
-    ),
-    itemCount: items.length,
-    itemBuilder: (ctx, i) => ItemCard(
-      item: items[i],
-      onTap: () => Navigator.push(ctx,
-          MaterialPageRoute(builder: (_) => ItemDetailScreen(item: items[i]))),
-    ),
-  );
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: Responsive.gridCols(context),
+          childAspectRatio: 0.78,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: items.length,
+        itemBuilder: (ctx, i) => ItemCard(
+          item: items[i],
+          onTap: () => Navigator.push(
+              ctx,
+              MaterialPageRoute(
+                  builder: (_) => ItemDetailScreen(item: items[i]))),
+        ),
+      );
 
-  Widget _sectionHeader(String title, Color textColor) =>
-      Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: textColor));
+  Widget _sectionHeader(String title, Color textColor) => Text(title,
+      style: TextStyle(
+          fontSize: 14, fontWeight: FontWeight.w700, color: textColor));
 
-  Widget _shopCard(OnlineSuggestion s, Color textColor, Color subColor) =>
-      Card(
+  Widget _shopCard(OnlineSuggestion s, Color textColor, Color subColor) => Card(
         margin: const EdgeInsets.only(bottom: 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: InkWell(
@@ -543,31 +671,43 @@ class _SearchScreenState extends State<SearchScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(children: [
               Container(
-                width: 42, height: 42,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: const Color(0xFF4ECDC4).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.shopping_bag_outlined, color: Color(0xFF4ECDC4)),
+                child: const Icon(Icons.shopping_bag_outlined,
+                    color: Color(0xFF4ECDC4)),
               ),
               const SizedBox(width: 12),
-              Expanded(child: Column(
+              Expanded(
+                  child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(s.platform, style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600, color: textColor)),
+                  Text(s.platform,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: textColor)),
                   if (s.note.isNotEmpty)
-                    Text(s.note, style: TextStyle(fontSize: 12, color: subColor)),
+                    Text(s.note,
+                        style: TextStyle(fontSize: 12, color: subColor)),
                 ],
               )),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0xFF4ECDC4).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Open', style: TextStyle(fontSize: 12, color: Color(0xFF4ECDC4), fontWeight: FontWeight.w600)),
+                  Text('Open',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF4ECDC4),
+                          fontWeight: FontWeight.w600)),
                   SizedBox(width: 4),
                   Icon(Icons.open_in_new, size: 13, color: Color(0xFF4ECDC4)),
                 ]),

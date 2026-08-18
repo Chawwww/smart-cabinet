@@ -32,11 +32,13 @@ class ResponsiveNavigation extends StatelessWidget {
       selectedIndex: selectedIndex,
       onDestinationSelected: onTap,
       height: 64,
-      destinations: items.map((item) => NavigationDestination(
-        icon: Icon(item.icon),
-        selectedIcon: Icon(item.selectedIcon ?? item.icon),
-        label: item.label,
-      )).toList(),
+      destinations: items
+          .map((item) => NavigationDestination(
+                icon: Icon(item.icon),
+                selectedIcon: Icon(item.selectedIcon ?? item.icon),
+                label: item.label,
+              ))
+          .toList(),
     );
   }
 
@@ -44,11 +46,14 @@ class ResponsiveNavigation extends StatelessWidget {
     return NavigationRail(
       selectedIndex: selectedIndex,
       onDestinationSelected: onTap,
-      destinations: items.map((item) => NavigationRailDestination(
-        icon: Icon(item.icon),
-        selectedIcon: Icon(item.selectedIcon ?? item.icon),
-        label: Text(item.label),
-      )).toList(),
+      labelType: NavigationRailLabelType.selected,
+      destinations: items
+          .map((item) => NavigationRailDestination(
+                icon: Icon(item.icon),
+                selectedIcon: Icon(item.selectedIcon ?? item.icon),
+                label: Text(item.label),
+              ))
+          .toList(),
     );
   }
 
@@ -65,7 +70,8 @@ class ResponsiveNavigation extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 40, height: 40,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFF4ECDC4), Color(0xFF45B7D1)],
@@ -106,7 +112,8 @@ class ResponsiveNavigation extends StatelessWidget {
                     ),
                   ),
                   selected: isSelected,
-                  selectedTileColor: const Color(0xFF4ECDC4).withValues(alpha: 0.1),
+                  selectedTileColor:
+                      const Color(0xFF4ECDC4).withValues(alpha: 0.1),
                   onTap: () => onTap(index),
                 );
               },

@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/item_provider.dart';
-import '../models/item_model.dart';
+import '../utils/responsive_layout.dart';
 
 class TagManagementScreen extends StatefulWidget {
   const TagManagementScreen({super.key});
@@ -14,7 +14,7 @@ class TagManagementScreen extends StatefulWidget {
 class _TagManagementScreenState extends State<TagManagementScreen> {
   String _searchQuery = '';
   List<String> _selectedTags = [];
-  
+
   @override
   void initState() {
     super.initState();
@@ -31,7 +31,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final subColor = textColor.withValues(alpha: 0.55);
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
-    
+
     // Get all unique tags with their count
     final tagMap = <String, int>{};
     for (final item in itemProvider.items) {
@@ -39,13 +39,13 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         tagMap[tag] = (tagMap[tag] ?? 0) + 1;
       }
     }
-    
+
     final allTags = tagMap.keys.toList()..sort();
     final filteredTags = _searchQuery.isEmpty
         ? allTags
-        : allTags.where((t) => 
-            t.toLowerCase().contains(_searchQuery.toLowerCase())
-          ).toList();
+        : allTags
+            .where((t) => t.toLowerCase().contains(_searchQuery.toLowerCase()))
+            .toList();
 
     return Scaffold(
       backgroundColor: scaffoldBg,
@@ -82,7 +82,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(
-                          color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                          color: isDark
+                              ? Colors.grey.shade700
+                              : Colors.grey.shade300,
                         ),
                       ),
                       focusedBorder: OutlineInputBorder(
@@ -93,13 +95,15 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         ),
                       ),
                       filled: true,
-                      fillColor: isDark ? const Color(0xFF2D2D2D) : Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      fillColor:
+                          isDark ? const Color(0xFF2D2D2D) : Colors.white,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 16),
                     ),
                     onChanged: (value) => setState(() => _searchQuery = value),
                   ),
                 ),
-                
+
                 // ── Stats ────────────────────────────────────
                 if (allTags.isNotEmpty)
                   Padding(
@@ -127,9 +131,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                       ],
                     ),
                   ),
-                
+
                 const SizedBox(height: 8),
-                
+
                 // ── Tags Grid ──────────────────────────────
                 Expanded(
                   child: allTags.isEmpty
@@ -188,8 +192,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                             )
                           : GridView.builder(
                               padding: const EdgeInsets.all(16),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: Responsive.gridCols(context),
                                 childAspectRatio: 1.2,
                                 crossAxisSpacing: 12,
                                 mainAxisSpacing: 12,
@@ -199,7 +204,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                                 final tag = filteredTags[index];
                                 final count = tagMap[tag] ?? 0;
                                 final isSelected = _selectedTags.contains(tag);
-                                
+
                                 return GestureDetector(
                                   onTap: () {
                                     setState(() {
@@ -210,24 +215,31 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                                       }
                                     });
                                   },
-                                  onLongPress: () => _showTagActions(context, tag, itemProvider),
+                                  onLongPress: () => _showTagActions(
+                                      context, tag, itemProvider),
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 200),
                                     decoration: BoxDecoration(
                                       color: isSelected
-                                          ? const Color(0xFF4ECDC4).withValues(alpha: 0.15)
-                                          : (isDark ? const Color(0xFF2D2D2D) : Colors.white),
+                                          ? const Color(0xFF4ECDC4)
+                                              .withValues(alpha: 0.15)
+                                          : (isDark
+                                              ? const Color(0xFF2D2D2D)
+                                              : Colors.white),
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
                                         color: isSelected
                                             ? const Color(0xFF4ECDC4)
-                                            : (isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+                                            : (isDark
+                                                ? Colors.grey.shade700
+                                                : Colors.grey.shade300),
                                         width: isSelected ? 2 : 1,
                                       ),
                                       boxShadow: [
                                         if (!isDark)
                                           BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.04),
+                                            color: Colors.black
+                                                .withValues(alpha: 0.04),
                                             blurRadius: 4,
                                             offset: const Offset(0, 2),
                                           ),
@@ -238,7 +250,8 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                                         Padding(
                                           padding: const EdgeInsets.all(12),
                                           child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
                                             children: [
                                               Icon(
                                                 Icons.tag,
@@ -296,7 +309,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                               },
                             ),
                 ),
-                
+
                 // ── Bottom Actions ──────────────────────────
                 if (_selectedTags.isNotEmpty)
                   Container(
@@ -330,7 +343,8 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton.icon(
-                          onPressed: () => _confirmDeleteTags(context, itemProvider),
+                          onPressed: () =>
+                              _confirmDeleteTags(context, itemProvider),
                           icon: const Icon(Icons.delete, size: 16),
                           label: Text('Delete (${_selectedTags.length})'),
                           style: ElevatedButton.styleFrom(
@@ -351,7 +365,8 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
 
   // ── Tag Actions Bottom Sheet ─────────────────────────
 
-  void _showTagActions(BuildContext context, String tag, ItemProvider provider) {
+  void _showTagActions(
+      BuildContext context, String tag, ItemProvider provider) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -417,9 +432,10 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
 
   // ── Rename Tag Dialog ─────────────────────────────────
 
-  void _showRenameDialog(BuildContext context, String oldTag, ItemProvider provider) {
+  void _showRenameDialog(
+      BuildContext context, String oldTag, ItemProvider provider) {
     final controller = TextEditingController(text: oldTag);
-    
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -460,16 +476,15 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                 Navigator.pop(context);
                 return;
               }
-              
+
               Navigator.pop(context);
-              
+
               // Update all items with this tag
               int updatedCount = 0;
               for (final item in provider.items) {
                 if (item.tags.contains(oldTag)) {
-                  final updatedTags = item.tags
-                      .map((t) => t == oldTag ? newTag : t)
-                      .toList();
+                  final updatedTags =
+                      item.tags.map((t) => t == oldTag ? newTag : t).toList();
                   await provider.updateItem(
                     item.copyWith(
                       tags: updatedTags,
@@ -479,11 +494,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                   updatedCount++;
                 }
               }
-              
+
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ Renamed "$oldTag" to "$newTag" ($updatedCount items updated)'),
+                    content: Text(
+                        '✅ Renamed "$oldTag" to "$newTag" ($updatedCount items updated)'),
                     backgroundColor: Colors.green,
                     duration: const Duration(seconds: 2),
                   ),
@@ -511,7 +527,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
       '/home',
       (route) => route.isFirst,
     );
-    
+
     // Show a snackbar with the search suggestion
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -526,9 +542,11 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
 
   // ── Confirm Delete Single Tag ─────────────────────────
 
-  void _confirmDeleteTag(BuildContext context, String tag, ItemProvider provider) {
-    final affectedItems = provider.items.where((i) => i.tags.contains(tag)).length;
-    
+  void _confirmDeleteTag(
+      BuildContext context, String tag, ItemProvider provider) {
+    final affectedItems =
+        provider.items.where((i) => i.tags.contains(tag)).length;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -562,7 +580,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              
+
               // Remove tag from all items
               int updatedCount = 0;
               for (final item in provider.items) {
@@ -576,11 +594,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                   updatedCount++;
                 }
               }
-              
+
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ Removed tag "$tag" from $updatedCount item(s)'),
+                    content:
+                        Text('✅ Removed tag "$tag" from $updatedCount item(s)'),
                     backgroundColor: Colors.green,
                     duration: const Duration(seconds: 2),
                   ),
@@ -603,7 +622,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   void _confirmDeleteTags(BuildContext context, ItemProvider provider) {
     final count = _selectedTags.length;
     final tagsList = _selectedTags.join(", ");
-    
+
     // Count affected items
     int affectedItems = 0;
     for (final item in provider.items) {
@@ -611,7 +630,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
         affectedItems++;
       }
     }
-    
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -653,13 +672,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              
+
               // Remove selected tags from all items
               int updatedCount = 0;
               for (final item in provider.items) {
-                final updatedTags = item.tags
-                    .where((t) => !_selectedTags.contains(t))
-                    .toList();
+                final updatedTags =
+                    item.tags.where((t) => !_selectedTags.contains(t)).toList();
                 if (updatedTags.length != item.tags.length) {
                   await provider.updateItem(
                     item.copyWith(
@@ -670,13 +688,14 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                   updatedCount++;
                 }
               }
-              
+
               setState(() => _selectedTags.clear());
-              
+
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ Removed $count tag(s) from $updatedCount item(s)'),
+                    content: Text(
+                        '✅ Removed $count tag(s) from $updatedCount item(s)'),
                     backgroundColor: Colors.green,
                     duration: const Duration(seconds: 2),
                   ),
@@ -696,8 +715,9 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
   // ── Confirm Clear All Tags ────────────────────────────
 
   void _confirmClearAllTags(BuildContext context, ItemProvider provider) {
-    final totalTags = provider.items.fold(0, (sum, item) => sum + item.tags.length);
-    
+    final totalTags =
+        provider.items.fold(0, (sum, item) => sum + item.tags.length);
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -740,7 +760,7 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              
+
               int updatedCount = 0;
               for (final item in provider.items) {
                 if (item.tags.isNotEmpty) {
@@ -753,11 +773,12 @@ class _TagManagementScreenState extends State<TagManagementScreen> {
                   updatedCount++;
                 }
               }
-              
+
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ Cleared all tags from $updatedCount item(s)'),
+                    content:
+                        Text('✅ Cleared all tags from $updatedCount item(s)'),
                     backgroundColor: Colors.green,
                     duration: const Duration(seconds: 2),
                   ),

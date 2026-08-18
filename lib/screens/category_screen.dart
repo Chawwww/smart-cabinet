@@ -6,6 +6,7 @@ import '../providers/item_provider.dart';
 import '../widgets/category_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_widget.dart';
+import '../utils/responsive_layout.dart';
 import 'add_edit_category_screen.dart';
 
 class CategoryScreen extends StatefulWidget {
@@ -64,8 +65,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
             )
           : GridView.builder(
               padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: Responsive.gridCols(context),
                 childAspectRatio: 0.85,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,

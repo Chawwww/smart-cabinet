@@ -7,6 +7,7 @@ import '../providers/cabinet_provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/item_card.dart';
 import '../widgets/empty_state.dart';
+import '../utils/responsive_layout.dart';
 import '../widgets/loading_widget.dart';
 import 'item_detail_screen.dart';
 import 'add_edit_item_screen.dart';
@@ -20,7 +21,7 @@ class ItemsScreen extends StatefulWidget {
 
 class _ItemsScreenState extends State<ItemsScreen> {
   String _selectedCategoryId = 'All';
-  String _selectedStatus     = 'All';
+  String _selectedStatus = 'All';
   String? _selectedCabinetId;
 
   @override
@@ -37,11 +38,11 @@ class _ItemsScreenState extends State<ItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final itemProvider     = context.watch<ItemProvider>();
+    final itemProvider = context.watch<ItemProvider>();
     final categoryProvider = context.watch<CategoryProvider>();
-    final cabinetProvider  = context.watch<CabinetProvider>();
-    final authProvider     = context.watch<AuthProvider>();
-    
+    final cabinetProvider = context.watch<CabinetProvider>();
+    final authProvider = context.watch<AuthProvider>();
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).colorScheme.onSurface;
 
@@ -49,7 +50,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
 
     final items = itemProvider.getFilteredItems(
       category: _selectedCategoryId,
-      status:   _selectedStatus,
+      status: _selectedStatus,
     );
 
     // Filter by cabinet if selected
@@ -75,17 +76,15 @@ class _ItemsScreenState extends State<ItemsScreen> {
               FilledButton.icon(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                      builder: (_) => const AddEditItemScreen()),
+                  MaterialPageRoute(builder: (_) => const AddEditItemScreen()),
                 ).then((_) => itemProvider.loadItems()),
                 icon: const Icon(Icons.add, size: 16),
-                label: const Text('Add Item',
-                    style: TextStyle(fontSize: 13)),
+                label: const Text('Add Item', style: TextStyle(fontSize: 13)),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF4ECDC4),
                   minimumSize: const Size(0, 34),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 0),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20)),
                 ),
@@ -99,11 +98,14 @@ class _ItemsScreenState extends State<ItemsScreen> {
           height: 48,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             children: [
-              _chip(context, 'All', _selectedCategoryId == 'All',
-                  isDark, () => setState(() {
+              _chip(
+                  context,
+                  'All',
+                  _selectedCategoryId == 'All',
+                  isDark,
+                  () => setState(() {
                         _selectedCategoryId = 'All';
                       })),
               ...categoryProvider.categories.map((cat) => _chip(
@@ -111,8 +113,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
                     cat.name,
                     _selectedCategoryId == cat.id,
                     isDark,
-                    () => setState(
-                        () => _selectedCategoryId = cat.id ?? 'All'),
+                    () => setState(() => _selectedCategoryId = cat.id ?? 'All'),
                     emoji: cat.icon,
                   )),
             ],
@@ -124,22 +125,17 @@ class _ItemsScreenState extends State<ItemsScreen> {
           height: 38,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
             children: [
               _chip(context, 'All', _selectedStatus == 'All', isDark,
                   () => setState(() => _selectedStatus = 'All')),
-              _chip(context, 'Inside', _selectedStatus == 'inside',
-                  isDark,
+              _chip(context, 'Inside', _selectedStatus == 'inside', isDark,
                   () => setState(() => _selectedStatus = 'inside')),
               _chip(context, 'Taken', _selectedStatus == 'taken', isDark,
                   () => setState(() => _selectedStatus = 'taken')),
               _chip(context, 'Low Stock', _selectedStatus == 'low_stock',
-                  isDark,
-                  () =>
-                      setState(() => _selectedStatus = 'low_stock')),
-              _chip(context, 'Expired', _selectedStatus == 'expired',
-                  isDark,
+                  isDark, () => setState(() => _selectedStatus = 'low_stock')),
+              _chip(context, 'Expired', _selectedStatus == 'expired', isDark,
                   () => setState(() => _selectedStatus = 'expired')),
             ],
           ),
@@ -172,7 +168,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
                         // ✅ Share button next to cabinet chip (only for owner)
                         if (isOwner)
                           IconButton(
-                            icon: const Icon(Icons.share_outlined, 
+                            icon: const Icon(Icons.share_outlined,
                                 size: 14, color: Color(0xFF4ECDC4)),
                             onPressed: () => Navigator.push(
                               context,
@@ -216,9 +212,8 @@ class _ItemsScreenState extends State<ItemsScreen> {
                 )
               : GridView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: Responsive.gridCols(context),
                     childAspectRatio: 0.78,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
@@ -256,21 +251,16 @@ class _ItemsScreenState extends State<ItemsScreen> {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
             color: selected
                 ? const Color(0xFF4ECDC4)
-                : (isDark
-                    ? const Color(0xFF2D2D2D)
-                    : Colors.white),
+                : (isDark ? const Color(0xFF2D2D2D) : Colors.white),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: selected
                   ? const Color(0xFF4ECDC4)
-                  : (isDark
-                      ? Colors.grey.shade700
-                      : Colors.grey.shade300),
+                  : (isDark ? Colors.grey.shade700 : Colors.grey.shade300),
               width: 1,
             ),
           ),
@@ -285,9 +275,7 @@ class _ItemsScreenState extends State<ItemsScreen> {
                 label,
                 style: TextStyle(
                   fontSize: 12,
-                  fontWeight: selected
-                      ? FontWeight.w600
-                      : FontWeight.normal,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
                   color: selected
                       ? Colors.white
                       : Theme.of(context)

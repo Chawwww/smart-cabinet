@@ -93,7 +93,8 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
 
   Future<void> _checkCloudSpeechAvailability() async {
     try {
-      final available = await CloudSpeechService.instance.isAzureSpeechConfigured();
+      final available =
+          await CloudSpeechService.instance.isAzureSpeechConfigured();
       if (mounted) setState(() => _azureAvailable = available);
     } catch (_) {
       if (mounted) setState(() => _azureAvailable = false);
@@ -222,6 +223,7 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
   }
 
   Widget _buildButton(Color color) {
+    final buttonSize = widget.iconSize + 20 < 48 ? 48.0 : widget.iconSize + 20;
     if (_isListening || _isCloudRecording) {
       return ScaleTransition(
         scale: _pulseAnim,
@@ -231,8 +233,8 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
                   context.read<LanguageProvider>().locale.languageCode)
               : _toggle,
           child: Container(
-            width: widget.iconSize + 20,
-            height: widget.iconSize + 20,
+            width: buttonSize,
+            height: buttonSize,
             decoration: BoxDecoration(
               color: Colors.red,
               shape: BoxShape.circle,
@@ -254,8 +256,8 @@ class _VoiceInputWidgetState extends State<VoiceInputWidget>
     return GestureDetector(
       onTap: _toggle,
       child: Container(
-        width: widget.iconSize + 20,
-        height: widget.iconSize + 20,
+        width: buttonSize,
+        height: buttonSize,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.12),
           shape: BoxShape.circle,

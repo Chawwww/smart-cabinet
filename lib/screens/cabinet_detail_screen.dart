@@ -10,6 +10,7 @@ import '../screens/add_edit_box_screen.dart';
 import '../widgets/empty_state.dart';
 import 'item_detail_screen.dart'; // ← ItemDetailScreen
 import 'add_edit_item_screen.dart'; // ← AddEditItemScreen
+import '../utils/responsive_layout.dart';
 
 class CabinetDetailScreen extends StatefulWidget {
   final String cabinetId;
@@ -282,9 +283,8 @@ class _CabinetDetailScreenState extends State<CabinetDetailScreen> {
                   )
                 : GridView.builder(
                     padding: const EdgeInsets.all(16),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: Responsive.gridCols(context),
                       childAspectRatio: 0.78,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,

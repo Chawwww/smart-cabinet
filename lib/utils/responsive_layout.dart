@@ -9,14 +9,14 @@ enum AppLayout { mobile, tablet, desktop }
 
 class Responsive {
   // ── Breakpoints ────────────────────────────────────────
-  static const double mobileMaxWidth  = 599;
-  static const double tabletMaxWidth  = 1199;
+  static const double mobileMaxWidth = 599;
+  static const double tabletMaxWidth = 1199;
   // desktop = 1200+
 
   static AppLayout layoutOf(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    if (w <= mobileMaxWidth)  return AppLayout.mobile;
-    if (w <= tabletMaxWidth)  return AppLayout.tablet;
+    if (w <= mobileMaxWidth) return AppLayout.mobile;
+    if (w <= tabletMaxWidth) return AppLayout.tablet;
     return AppLayout.desktop;
   }
 
@@ -34,38 +34,62 @@ class Responsive {
 
   // ── Grid cross-axis count ──────────────────────────────
   static int gridCols(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width < 360) return 1;
     switch (layoutOf(context)) {
-      case AppLayout.mobile:  return 2;
-      case AppLayout.tablet:  return 3;
-      case AppLayout.desktop: return 4;
+      case AppLayout.mobile:
+        return 2;
+      case AppLayout.tablet:
+        return 3;
+      case AppLayout.desktop:
+        return 4;
     }
   }
 
   // ── Content max width (keeps text readable on wide screens)
   static double contentMaxWidth(BuildContext context) {
     switch (layoutOf(context)) {
-      case AppLayout.mobile:  return double.infinity;
-      case AppLayout.tablet:  return 800;
-      case AppLayout.desktop: return 1100;
+      case AppLayout.mobile:
+        return double.infinity;
+      case AppLayout.tablet:
+        return 800;
+      case AppLayout.desktop:
+        return 1100;
     }
   }
 
   // ── Nav sidebar width (desktop) ────────────────────────
-  static const double sidebarWidth        = 260;
-  static const double sidebarCollapsed    = 72;
+  static const double sidebarWidth = 260;
+  static const double sidebarCollapsed = 72;
 
   // ── Padding ────────────────────────────────────────────
   static double pagePadding(BuildContext context) {
     switch (layoutOf(context)) {
-      case AppLayout.mobile:  return 16;
-      case AppLayout.tablet:  return 24;
-      case AppLayout.desktop: return 32;
+      case AppLayout.mobile:
+        return 16;
+      case AppLayout.tablet:
+        return 24;
+      case AppLayout.desktop:
+        return 32;
     }
   }
 
   // ── Font scale ─────────────────────────────────────────
-  static double titleFontSize(BuildContext context) =>
-      isDesktop(context) ? 28 : isTablet(context) ? 24 : 20;
+  static double titleFontSize(BuildContext context) => isDesktop(context)
+      ? 28
+      : isTablet(context)
+          ? 24
+          : 20;
+
+  static Widget constrainContent(BuildContext context, Widget child) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: contentMaxWidth(context)),
+        child: child,
+      ),
+    );
+  }
 
   // ── Build helper: switch between layouts ───────────────
   static Widget builder({
