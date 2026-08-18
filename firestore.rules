@@ -1,0 +1,360 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══════════════════════════════════════════════════════
+    // HELPER FUNCTIONS
+    // ═══════════════════════════════════════════════════════
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    function ownsDoc() {
+      return isAuth()
+          && resource.data.userId == request.auth.uid;
+    }
+
+    function writingAsOwner() {
+      return isAuth()
+          && request.resource.data.userId == request.auth.uid;
+    }
+
+    function isSharedWithMe(data) {
+      return data.sharedWith is list 
+          && request.auth.uid in data.sharedWith;
+    }
+
+    function canReadCabinetData(data) {
+      return isAuth() 
+          && (data.userId == request.auth.uid 
+              || isSharedWithMe(data));
+    }
+
+    function canEditCabinetData(data) {
+      return isAuth() && (
+        data.userId == request.auth.uid ||
+        (data.permissions is map 
+          && data.permissions[request.auth.uid] in ['edit', 'admin'])
+      );
+    }
+
+    function canAdminCabinetData(data) {
+      return isAuth() && (
+        data.userId == request.auth.uid ||
+        (data.permissions is map 
+          && data.permissions[request.auth.uid] == 'admin')
+      );
+    }
+
+    function parentCabinet(cabinetId) {
+      return get(/databases/$(database)/documents/cabinets/$(cabinetId)).data;
+    }
+
+    function hasString(field) {
+      return field in request.resource.data
+          && request.resource.data[field] is string
+          && request.resource.data[field].size() > 0;
+    }
+
+    function optionalString(field) {
+      return !(field in request.resource.data)
+          || request.resource.data[field] == null
+          || request.resource.data[field] is string;
+    }
+
+    function validImageUrls() {
+      return !('imageUrls' in request.resource.data)
+          || request.resource.data.imageUrls is list;
+    }
+
+    function safeImageUrls() {
+      return !('imageUrls' in request.resource.data)
+          || request.resource.data.imageUrls.size() == 0
+          || request.resource.data.imageUrls[0].matches('https://.*');
+    }
+
+    function validDoorId() {
+      return !('doorId' in request.resource.data)
+          || request.resource.data.doorId == null
+          || request.resource.data.doorId in ['upper', 'lower'];
+    }
+
+    function validBleDeviceId() {
+      return !('bleDeviceId' in request.resource.data)
+          || request.resource.data.bleDeviceId == null
+          || request.resource.data.bleDeviceId is string;
+    }
+
+    function isAuthorizedDevice(deviceUid) {
+      return request.auth.uid == "cty6s5tuSuMxPJFzcOpy9BqF1Lf1"
+          || (isAuth() && request.auth.uid == deviceUid);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // USERS
+    // ═══════════════════════════════════════════════════════
+    match /users/{userId} {
+      allow get:    if isOwner(userId) || isAuth();
+      allow list:   if false;
+      allow create: if isOwner(userId) && hasString('name') && hasString('email');
+      allow update: if isOwner(userId) && request.resource.data.uid == resource.data.uid;
+      allow delete: if isOwner(userId);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // CABINETS
+    // ═══════════════════════════════════════════════════════
+    match /cabinets/{cabinetId} {
+      allow get: if canReadCabinetData(resource.data);
+      allow list: if isAuth() && (
+        resource.data.userId == request.auth.uid ||
+        (resource.data.sharedWith is list && request.auth.uid in resource.data.sharedWith)
+      );
+      
+      allow create: if writingAsOwner() 
+          && hasString('name') 
+          && optionalString('photoUrl')
+          && validBleDeviceId();
+      
+      allow update: if (ownsDoc() || (
+        canEditCabinetData(resource.data) &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.sharedWith == resource.data.sharedWith &&
+        request.resource.data.permissions == resource.data.permissions
+      )) && validBleDeviceId();
+      
+      allow delete: if ownsDoc() || canAdminCabinetData(resource.data);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SHARED CABINETS
+    // ═══════════════════════════════════════════════════════
+    match /shared_cabinets/{shareId} {
+      allow get: if isAuth() 
+          && (resource.data.ownerId == request.auth.uid 
+              || resource.data.sharedWith == request.auth.uid);
+      allow list: if isAuth() 
+          && (resource.data.ownerId == request.auth.uid 
+              || resource.data.sharedWith == request.auth.uid);
+      
+      allow create: if isAuth() 
+          && hasString('cabinetId')
+          && hasString('sharedWith')
+          && hasString('permission')
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.permission in ['view', 'edit', 'admin'];
+      
+      allow update: if isAuth() 
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.permission in ['view', 'edit', 'admin'];
+      
+      allow delete: if isAuth() 
+          && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // BOXES
+    // ═══════════════════════════════════════════════════════
+    match /boxes/{boxId} {
+      allow get: if isAuth() && (
+        ownsDoc() ||
+        ('cabinetId' in resource.data 
+          && canReadCabinetData(parentCabinet(resource.data.cabinetId)))
+      );
+      allow list: if isAuth() && (
+        ownsDoc() ||
+        ('cabinetId' in resource.data 
+          && canReadCabinetData(parentCabinet(resource.data.cabinetId)))
+      );
+      
+      allow create: if writingAsOwner() 
+          && hasString('name') 
+          && hasString('cabinetId')
+          && validDoorId()
+          && canEditCabinetData(parentCabinet(request.resource.data.cabinetId));
+      
+      allow update: if isAuth() && (
+        ownsDoc() ||
+        ('cabinetId' in resource.data 
+          && canEditCabinetData(parentCabinet(resource.data.cabinetId)))
+      ) && validDoorId();
+      
+      allow delete: if ownsDoc() || (
+        'cabinetId' in resource.data 
+        && canAdminCabinetData(parentCabinet(resource.data.cabinetId))
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // ITEMS - ✅ FIXED with separate get/list rules
+    // ═══════════════════════════════════════════════════════
+    match /items/{itemId} {
+      // ✅ FIXED: Separate get rule that handles non-existent documents
+      allow get: if isAuth() && (
+        !exists(/databases/$(database)/documents/items/$(itemId)) ||
+        ownsDoc() ||
+        ('cabinetId' in resource.data &&
+          canReadCabinetData(parentCabinet(resource.data.cabinetId)))
+      );
+
+      // ✅ FIXED: List rule with proper field existence check
+      allow list: if isAuth() && (
+        ownsDoc() ||
+        ('cabinetId' in resource.data &&
+          canReadCabinetData(parentCabinet(resource.data.cabinetId)))
+      );
+      
+      // Create permission
+      allow create: if writingAsOwner()
+          && hasString('name')
+          && optionalString('cabinetId')
+          && optionalString('boxId')
+          && validDoorId()
+          && validImageUrls()
+          && safeImageUrls()
+          && (request.resource.data.cabinetId == null 
+              || canEditCabinetData(parentCabinet(request.resource.data.cabinetId)));
+      
+      // UPDATE RULE 1: Full update
+      allow update: if isAuth() && (
+        ownsDoc() ||
+        ('cabinetId' in resource.data 
+          && canEditCabinetData(parentCabinet(resource.data.cabinetId)))
+      ) && validDoorId()
+        && validImageUrls() 
+        && safeImageUrls();
+      
+      // UPDATE RULE 2: Restricted update for "take out" operations
+      allow update: if isAuth() && (
+        ownsDoc() ||
+        ('cabinetId' in resource.data 
+          && canEditCabinetData(parentCabinet(resource.data.cabinetId)))
+      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 
+        'quantity', 
+        'lastTakenBy', 
+        'lastTakenTime', 
+        'takenCount', 
+        'withdrawalHistory', 
+        'updatedAt'
+      ]);
+      
+      // Delete permission
+      allow delete: if ownsDoc() || (
+        'cabinetId' in resource.data 
+        && canAdminCabinetData(parentCabinet(resource.data.cabinetId))
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // ITEM HISTORY - ✅ ADDED
+    // ═══════════════════════════════════════════════════════
+    match /item_history/{historyId} {
+      allow get: if ownsDoc();
+      allow list: if ownsDoc();
+      allow create: if writingAsOwner();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // CATEGORIES
+    // ═══════════════════════════════════════════════════════
+    match /categories/{categoryId} {
+      allow get: if isAuth() && resource.data.userId == request.auth.uid;
+      allow list: if isAuth() && resource.data.userId == request.auth.uid;
+      allow create: if writingAsOwner() 
+          && hasString('name')
+          && hasString('icon')
+          && hasString('color');
+      allow update: if ownsDoc() 
+          && request.resource.data.userId == resource.data.userId;
+      allow delete: if ownsDoc();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // NOTIFICATIONS
+    // ═══════════════════════════════════════════════════════
+    match /notifications/{notificationId} {
+      allow get:   if ownsDoc();
+      allow list:  if ownsDoc();
+      allow create: if writingAsOwner();
+      allow update: if ownsDoc()
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.itemId == resource.data.itemId;
+      allow delete: if ownsDoc();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // DOOR LOGS
+    // ═══════════════════════════════════════════════════════
+    match /door_logs/{logId} {
+      allow get: if ownsDoc();
+      allow list: if ownsDoc();
+      allow create: if isAuthorizedDevice(request.resource.data.userId)
+          || (isAuth() && request.resource.data.userId == request.auth.uid);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // IoT DEVICES
+    // ═══════════════════════════════════════════════════════
+    match /iot_devices/{deviceId} {
+      allow get: if isAuth() && resource.data.ownerId == request.auth.uid;
+      allow list: if isAuth() && resource.data.ownerId == request.auth.uid;
+      allow create: if isAuthorizedDevice(request.resource.data.ownerId)
+          || (isAuth() && request.resource.data.ownerId == request.auth.uid);
+      allow update: if isAuthorizedDevice(resource.data.ownerId)
+          || (isAuth() && resource.data.ownerId == request.auth.uid);
+      allow delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // FCM TOKENS
+    // ═══════════════════════════════════════════════════════
+    match /fcm_tokens/{userId} {
+      allow get, list, create, update, delete: if isOwner(userId);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // AUTHORIZED DEVICES
+    // ═══════════════════════════════════════════════════════
+    match /authorized_devices/{deviceId} {
+      allow get: if isAuth();
+      allow list: if isAuth();
+      allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // CABINET INVITES - ✅ ADDED for sharing feature
+    // ═══════════════════════════════════════════════════════
+    match /cabinet_invites/{inviteId} {
+      allow get: if isAuth();
+      allow list: if isAuth();
+      allow create: if isAuth() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.ownerId == request.auth.uid ||
+        (request.resource.data.acceptedBy == request.auth.uid &&
+         resource.data.acceptedBy == null)
+      );
+      allow delete: if isAuth() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // DENY EVERYTHING ELSE
+    // ═══════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

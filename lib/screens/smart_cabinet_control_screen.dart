@@ -14,7 +14,8 @@ class SmartCabinetControlScreen extends StatefulWidget {
   const SmartCabinetControlScreen({super.key});
 
   @override
-  State<SmartCabinetControlScreen> createState() => _SmartCabinetControlScreenState();
+  State<SmartCabinetControlScreen> createState() =>
+      _SmartCabinetControlScreenState();
 }
 
 class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
@@ -52,7 +53,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   Future<bool> _checkPermissions() async {
     // Check location permission
     final status = await Permission.locationWhenInUse.status;
-    
+
     if (status.isGranted) {
       // Also check Bluetooth permissions for Android 12+
       if (await _checkBluetoothPermissions()) {
@@ -60,7 +61,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       }
       return false;
     }
-    
+
     if (status.isDenied) {
       final result = await Permission.locationWhenInUse.request();
       if (result.isGranted) {
@@ -68,29 +69,29 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       }
       return false;
     }
-    
+
     if (status.isPermanentlyDenied) {
       await openAppSettings();
       return false;
     }
-    
+
     return false;
   }
 
   Future<bool> _checkBluetoothPermissions() async {
     final bluetoothScan = await Permission.bluetoothScan.status;
     final bluetoothConnect = await Permission.bluetoothConnect.status;
-    
+
     if (!bluetoothScan.isGranted) {
       final result = await Permission.bluetoothScan.request();
       if (!result.isGranted) return false;
     }
-    
+
     if (!bluetoothConnect.isGranted) {
       final result = await Permission.bluetoothConnect.request();
       if (!result.isGranted) return false;
     }
-    
+
     return true;
   }
 
@@ -98,13 +99,13 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   Future<void> _loadLinkedCabinet() async {
     final iotService = context.read<IoTService>();
     final deviceId = iotService.connectedDeviceId;
-    
+
     if (deviceId != null) {
       final cabProvider = context.read<CabinetProvider>();
       if (cabProvider.cabinets.isEmpty) {
         await cabProvider.forceLoadCabinets();
       }
-      
+
       try {
         final cabinet = cabProvider.cabinets.firstWhere(
           (c) => c.bleDeviceId == deviceId,
@@ -134,8 +135,18 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       setState(() {
         if (door == 'upper') {
           _upperDoorOpen = isOpen;
+          // ✅ Turn off light when door closes
+          if (!isOpen && _upperLedOn) {
+            _upperLedOn = false;
+            iotService.sendLEDCommand(CabinetDoor.upper, false);
+          }
         } else if (door == 'lower') {
           _lowerDoorOpen = isOpen;
+          // ✅ Turn off light when door closes
+          if (!isOpen && _lowerLedOn) {
+            _lowerLedOn = false;
+            iotService.sendLEDCommand(CabinetDoor.lower, false);
+          }
         }
       });
 
@@ -173,9 +184,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   }
 
   void _showDoorNotification(String doorName, bool isOpen) {
-    final message = isOpen
-        ? '🔓 $doorName opened'
-        : '🔒 $doorName closed';
+    final message = isOpen ? '🔓 $doorName opened' : '🔒 $doorName closed';
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -219,7 +228,8 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       setState(() {
         _devices = List.from(iotService.discoveredDevices);
         _isScanning = false;
-        _connectionStatus = _devices.isEmpty ? 'No devices found' : 'Devices found';
+        _connectionStatus =
+            _devices.isEmpty ? 'No devices found' : 'Devices found';
       });
 
       if (_devices.isEmpty) {
@@ -426,30 +436,22 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           children: [
             _buildConnectionStatus(isConnected, textColor, subColor),
             const SizedBox(height: 16),
-
             if (isConnected && _linkedCabinetId != null)
               _buildLinkedCabinetInfo(textColor, subColor, isDark),
-
             const SizedBox(height: 20),
-
-            if (!isConnected)
-              _buildScanSection(textColor, subColor),
-
+            if (!isConnected) _buildScanSection(textColor, subColor),
             if (isConnected) ...[
               const SizedBox(height: 16),
               _buildControlSection(textColor, subColor, isDark),
             ],
-
             if (isConnected) ...[
               const SizedBox(height: 20),
               _buildQuickActions(textColor, isDark),
             ],
-
             if (isConnected) ...[
               const SizedBox(height: 24),
               _buildItemsSection(),
             ],
-
             const SizedBox(height: 20),
           ],
         ),
@@ -458,7 +460,8 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   }
 
   // ── Widget Builders ────────────────────────────────
-  Widget _buildConnectionStatus(bool isConnected, Color textColor, Color subColor) {
+  Widget _buildConnectionStatus(
+      bool isConnected, Color textColor, Color subColor) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -641,7 +644,10 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
               description,
               style: TextStyle(
                 fontSize: 10,
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.5),
               ),
             ),
           ],
@@ -654,12 +660,13 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_connectionStatus != 'Disconnected' && _connectionStatus != 'Connected')
+        if (_connectionStatus != 'Disconnected' &&
+            _connectionStatus != 'Connected')
           Container(
             padding: const EdgeInsets.all(10),
             margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
-              color: _connectionStatus.contains('error') 
+              color: _connectionStatus.contains('error')
                   ? Colors.red.withValues(alpha: 0.1)
                   : Colors.blue.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
@@ -672,11 +679,11 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             child: Row(
               children: [
                 Icon(
-                  _connectionStatus.contains('error') 
-                      ? Icons.error_outline 
+                  _connectionStatus.contains('error')
+                      ? Icons.error_outline
                       : Icons.info_outline,
-                  color: _connectionStatus.contains('error') 
-                      ? Colors.red 
+                  color: _connectionStatus.contains('error')
+                      ? Colors.red
                       : Colors.blue,
                   size: 18,
                 ),
@@ -695,7 +702,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
               ],
             ),
           ),
-
         Row(
           children: [
             Expanded(
@@ -703,7 +709,8 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
                 onPressed: _isScanning ? null : _startScan,
                 icon: _isScanning
                     ? const SizedBox(
-                        width: 20, height: 20,
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.bluetooth_searching),
@@ -717,7 +724,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           ],
         ),
         const SizedBox(height: 12),
-        
         if (_devices.isNotEmpty)
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -731,37 +737,46 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              ..._devices.map((device) => Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  leading: const Icon(Icons.devices, color: Color(0xFF4ECDC4)),
-                  title: Text(
-                    device.name.isNotEmpty ? device.name : 'ESP32 Device',
-                    style: TextStyle(color: textColor),
-                  ),
-                  subtitle: Text(
-                    device.id,
-                    style: TextStyle(fontSize: 11, color: subColor),
-                  ),
-                  trailing: _isConnecting && _selectedDeviceId == device.id
-                      ? const SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : ElevatedButton(
-                          onPressed: () => _connectToDevice(device.id),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4ECDC4),
-                            minimumSize: const Size(70, 30),
+              ..._devices
+                  .map((device) => Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: const Icon(Icons.devices,
+                              color: Color(0xFF4ECDC4)),
+                          title: Text(
+                            device.name.isNotEmpty
+                                ? device.name
+                                : 'ESP32 Device',
+                            style: TextStyle(color: textColor),
                           ),
-                          child: const Text('Connect'),
+                          subtitle: Text(
+                            device.id,
+                            style: TextStyle(fontSize: 11, color: subColor),
+                          ),
+                          trailing: _isConnecting &&
+                                  _selectedDeviceId == device.id
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : ElevatedButton(
+                                  onPressed: () => _connectToDevice(device.id),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF4ECDC4),
+                                    minimumSize: const Size(70, 30),
+                                  ),
+                                  child: const Text('Connect'),
+                                ),
                         ),
-                ),
-              )).toList(),
+                      ))
+                  .toList(),
             ],
           ),
-        
-        if (_devices.isEmpty && !_isScanning && _connectionStatus != 'Scanning...')
+        if (_devices.isEmpty &&
+            !_isScanning &&
+            _connectionStatus != 'Scanning...')
           Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -809,7 +824,6 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           ),
         ),
         const SizedBox(height: 12),
-
         _buildDoorControl(
           title: 'Upper Door',
           icon: Icons.arrow_upward,
@@ -820,9 +834,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           color: const Color(0xFF4ECDC4),
           isDark: isDark,
         ),
-
         const SizedBox(height: 12),
-
         _buildDoorControl(
           title: 'Lower Door',
           icon: Icons.arrow_downward,
@@ -833,9 +845,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
           color: const Color(0xFFFF6B6B),
           isDark: isDark,
         ),
-
         const SizedBox(height: 12),
-
         Row(
           children: [
             Expanded(
@@ -863,9 +873,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             ),
           ],
         ),
-
         const SizedBox(height: 12),
-
         Row(
           children: [
             Expanded(
@@ -876,10 +884,12 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
                     _toggleLED('lower');
                   });
                 },
-                icon: Icon(_upperLedOn ? Icons.lightbulb : Icons.lightbulb_outline),
+                icon: Icon(
+                    _upperLedOn ? Icons.lightbulb : Icons.lightbulb_outline),
                 label: Text(_upperLedOn ? 'LED On' : 'LED Off'),
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: _upperLedOn ? Colors.amber : Colors.grey),
+                  side: BorderSide(
+                      color: _upperLedOn ? Colors.amber : Colors.grey),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
@@ -968,9 +978,9 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     final itemProvider = context.watch<ItemProvider>();
     final items = itemProvider.items;
 
-    final cabinetItems = items.where((item) =>
-      item.cabinetId != null && item.cabinetId!.isNotEmpty
-    ).toList();
+    final cabinetItems = items
+        .where((item) => item.cabinetId != null && item.cabinetId!.isNotEmpty)
+        .toList();
 
     if (cabinetItems.isEmpty) {
       return Column(
@@ -1008,25 +1018,26 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
         ),
         const SizedBox(height: 8),
         ...cabinetItems.map((item) => ListTile(
-          leading: Text(item.icon ?? '📦', style: const TextStyle(fontSize: 24)),
-          title: Text(item.name),
-          subtitle: Text('Qty: ${item.quantity} ${item.unit}'),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: item.isLowStock ? Colors.orange : Colors.green,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              item.isLowStock ? 'Low Stock' : 'In Stock',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
+              leading:
+                  Text(item.icon ?? '📦', style: const TextStyle(fontSize: 24)),
+              title: Text(item.name),
+              subtitle: Text('Qty: ${item.quantity} ${item.unit}'),
+              trailing: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: item.isLowStock ? Colors.orange : Colors.green,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  item.isLowStock ? 'Low Stock' : 'In Stock',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-            ),
-          ),
-        )),
+            )),
       ],
     );
   }

@@ -208,8 +208,17 @@ class ItemProvider extends ChangeNotifier {
     };
 
     final newQty = item.quantity - qty;
+
+    // ✅ Ensure initialQuantity is preserved and corrected if needed
+    int ensuredInitialQty = item.initialQuantity;
+    if (ensuredInitialQty <= 0) {
+      // If initialQuantity was never set, use current quantity as the initial
+      ensuredInitialQty = item.quantity;
+    }
+
     final updated = item.copyWith(
       quantity: newQty,
+      initialQuantity: ensuredInitialQty, // ✅ Explicitly preserve
       status: newQty == 0 ? 'taken' : 'inside',
       takenCount: item.takenCount + qty,
       lastTakenBy: takenBy,
@@ -224,9 +233,33 @@ class ItemProvider extends ChangeNotifier {
   // ── Return Item ─────────────────────────────────────────
   Future<bool> returnItem(ItemModel item) async {
     final now = DateTime.now();
+
+    // ✅ Ensure initialQuantity is preserved and corrected if needed
+    int ensuredInitialQty = item.initialQuantity;
+    if (ensuredInitialQty <= 0) {
+      // If initialQuantity was never set, use current + 1 as the initial
+      ensuredInitialQty = item.quantity + 1;
+    }
+
+    // ✅ Remove the last withdrawal record and adjust takenCount
+    final List<Map<String, dynamic>> updatedHistory =
+        item.withdrawalHistory.isNotEmpty
+            ? item.withdrawalHistory
+                .sublist(0, item.withdrawalHistory.length - 1)
+                .cast<Map<String, dynamic>>()
+            : [];
+
+    final lastQtyTaken = item.withdrawalHistory.isNotEmpty
+        ? (item.withdrawalHistory.last['qty'] as int?) ?? 1
+        : 0;
+
     final updated = item.copyWith(
       quantity: item.quantity + 1,
+      initialQuantity: ensuredInitialQty, // ✅ Explicitly preserve
       status: 'inside',
+      takenCount: (item.takenCount - lastQtyTaken)
+          .clamp(0, 999999), // Reduce taken count
+      withdrawalHistory: updatedHistory, // ✅ Remove last withdrawal record
       updatedAt: now,
     );
     return updateItem(updated);

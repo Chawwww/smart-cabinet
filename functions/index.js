@@ -39,27 +39,32 @@ async function addCabinetMember(cabinetId, ownerId, memberId, permission) {
     const cabinet = snapshot.data();
     if (cabinet.userId !== ownerId) throw new HttpsError("permission-denied", "Only the owner can share this cabinet.");
     transaction.update(ref, {
-      sharedWith: FieldValue.arrayUnion([memberId]),
+      sharedWith: FieldValue.arrayUnion(memberId),
       [`permissions.${memberId}`]: permission,
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
 }
-
 exports.shareCabinetByEmail = onCall({ region: "us-central1" }, async (request) => {
-  const ownerId = requireAuth(request);
-  const { cabinetId, email, permission = "view" } = request.data || {};
-  if (typeof cabinetId !== "string" || typeof email !== "string") {
-    throw new HttpsError("invalid-argument", "Cabinet ID and email are required.");
+  try {
+    const ownerId = requireAuth(request);
+    const { cabinetId, email, permission = "view" } = request.data || {};
+    if (typeof cabinetId !== "string" || typeof email !== "string") {
+      throw new HttpsError("invalid-argument", "Cabinet ID and email are required.");
+    }
+    requirePermission(permission);
+    const users = await db.collection("users").where("email", "==", email.trim().toLowerCase()).limit(1).get();
+    if (users.empty) throw new HttpsError("not-found", "No account exists for this email address.");
+    const memberId = users.docs[0].id;
+    if (memberId === ownerId) throw new HttpsError("failed-precondition", "You cannot share with yourself.");
+    await addCabinetMember(cabinetId, ownerId, memberId, permission);
+    await sendPushAndLog(memberId, "📂 Cabinet Shared", "A cabinet was shared with you.", { type: "share", cabinetId });
+    return { memberId };
+  } catch (err) {
+    console.error('shareCabinetByEmail error:', err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError('internal', err?.message || 'Internal server error');
   }
-  requirePermission(permission);
-  const users = await db.collection("users").where("email", "==", email.trim().toLowerCase()).limit(1).get();
-  if (users.empty) throw new HttpsError("not-found", "No account exists for this email address.");
-  const memberId = users.docs[0].id;
-  if (memberId === ownerId) throw new HttpsError("failed-precondition", "You cannot share with yourself.");
-  await addCabinetMember(cabinetId, ownerId, memberId, permission);
-  await sendPushAndLog(memberId, "📂 Cabinet Shared", "A cabinet was shared with you.", { type: "share", cabinetId });
-  return { memberId };
 });
 
 exports.createCabinetInvite = onCall({ region: "us-central1" }, async (request) => {
@@ -89,7 +94,7 @@ exports.acceptCabinetInvite = onCall({ region: "us-central1" }, async (request) 
     const cabinetRef = db.collection("cabinets").doc(invite.cabinetId);
     const cabinetSnap = await transaction.get(cabinetRef);
     if (!cabinetSnap.exists || cabinetSnap.data().userId !== invite.ownerId) throw new HttpsError("not-found", "Cabinet is unavailable.");
-    transaction.update(cabinetRef, { sharedWith: FieldValue.arrayUnion([memberId]), [`permissions.${memberId}`]: invite.permission, updatedAt: FieldValue.serverTimestamp() });
+    transaction.update(cabinetRef, { sharedWith: FieldValue.arrayUnion(memberId), [`permissions.${memberId}`]: invite.permission, updatedAt: FieldValue.serverTimestamp() });
     transaction.update(inviteRef, { acceptedBy: memberId, acceptedAt: FieldValue.serverTimestamp() });
   });
   return { success: true };
@@ -141,6 +146,93 @@ exports.checkAzureSpeechAvailability = onCall({ region: "asia-southeast1" }, asy
   const region = process.env.AZURE_SPEECH_REGION;
   return { azureSpeechConfigured: Boolean(key && region) };
 });
+
+// ═══════════════════════════════════════════════════════
+// BULK SHARE CABINET - Share with multiple users at once
+// ═══════════════════════════════════════════════════════
+exports.bulkShareCabinet = onCall({ region: "us-central1" }, async (request) => {
+  const ownerId = requireAuth(request);
+  const { cabinetId, emails = [], permission = "view" } = request.data || {};
+  if (typeof cabinetId !== "string") throw new HttpsError("invalid-argument", "Cabinet ID is required.");
+  if (!Array.isArray(emails) || emails.length === 0) throw new HttpsError("invalid-argument", "At least one email is required.");
+  requirePermission(permission);
+  
+  const results = [];
+  for (const email of emails) {
+    try {
+      const users = await db.collection("users").where("email", "==", email.trim().toLowerCase()).limit(1).get();
+      if (users.empty) {
+        results.push({ email, success: false, error: "No account found" });
+        continue;
+      }
+      const memberId = users.docs[0].id;
+      if (memberId === ownerId) {
+        results.push({ email, success: false, error: "Cannot share with yourself" });
+        continue;
+      }
+      await addCabinetMember(cabinetId, ownerId, memberId, permission);
+      await sendPushAndLog(memberId, "📂 Cabinet Shared", `A cabinet was shared with you.`, { type: "share", cabinetId });
+      results.push({ email, success: true, memberId });
+    } catch (error) {
+      results.push({ email, success: false, error: error.message });
+    }
+  }
+  return { results, successCount: results.filter(r => r.success).length };
+});
+
+// ═══════════════════════════════════════════════════════
+// LIST PENDING CABINET INVITES - View all invitations sent
+// ═══════════════════════════════════════════════════════
+exports.listCabinetInvites = onCall({ region: "us-central1" }, async (request) => {
+  const ownerId = requireAuth(request);
+  const { cabinetId } = request.data || {};
+  if (typeof cabinetId !== "string") throw new HttpsError("invalid-argument", "Cabinet ID is required.");
+  
+  const cabinet = await db.collection("cabinets").doc(cabinetId).get();
+  if (!cabinet.exists || cabinet.data().userId !== ownerId) {
+    throw new HttpsError("permission-denied", "Only the owner can list invites.");
+  }
+  
+  const invites = await db.collection("cabinet_invites")
+    .where("cabinetId", "==", cabinetId)
+    .where("acceptedBy", "==", null)
+    .get();
+  
+  return {
+    invites: invites.docs.map(doc => ({
+      id: doc.id,
+      permission: doc.data().permission,
+      createdAt: doc.data().createdAt?.toMillis() || 0,
+      expiresAt: doc.data().expiresAt?.toMillis() || 0,
+      isExpired: doc.data().expiresAt?.toMillis() < Date.now(),
+    })),
+  };
+});
+
+// ═══════════════════════════════════════════════════════
+// REVOKE INVITE - Revoke a pending invitation
+// ═══════════════════════════════════════════════════════
+exports.revokeInvite = onCall({ region: "us-central1" }, async (request) => {
+  const ownerId = requireAuth(request);
+  const { cabinetId, inviteId } = request.data || {};
+  if (typeof cabinetId !== "string" || typeof inviteId !== "string") {
+    throw new HttpsError("invalid-argument", "Cabinet ID and Invite ID are required.");
+  }
+  
+  const cabinet = await db.collection("cabinets").doc(cabinetId).get();
+  if (!cabinet.exists || cabinet.data().userId !== ownerId) {
+    throw new HttpsError("permission-denied", "Only the owner can revoke invites.");
+  }
+  
+  const invite = await db.collection("cabinet_invites").doc(inviteId).get();
+  if (!invite.exists || invite.data().cabinetId !== cabinetId) {
+    throw new HttpsError("not-found", "Invite not found.");
+  }
+  
+  await db.collection("cabinet_invites").doc(inviteId).delete();
+  return { success: true };
+});
+
 // ═══════════════════════════════════════════════════════
 // Shared helper: write a Firestore notification doc AND
 // send a push notification via FCM to the user's device.

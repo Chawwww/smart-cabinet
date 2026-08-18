@@ -135,10 +135,12 @@ class _MedicineInfoScreenState extends State<MedicineInfoScreen> {
 
     try {
       await _speech.listen(
-        localeId: locale,
-        listenFor: const Duration(seconds: 10),
-        pauseFor: const Duration(seconds: 2),
-        partialResults: true,
+        listenOptions: SpeechListenOptions(
+          localeId: locale,
+          listenFor: const Duration(seconds: 10),
+          pauseFor: const Duration(seconds: 2),
+          partialResults: true,
+        ),
         onResult: (result) {
           setState(() => _queryCtrl.text = result.recognizedWords);
           if (result.finalResult && result.recognizedWords.isNotEmpty) {

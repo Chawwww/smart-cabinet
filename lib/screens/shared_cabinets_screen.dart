@@ -6,8 +6,29 @@ import '../providers/auth_provider.dart';
 import '../services/cabinet_share_service.dart';
 import 'cabinet_detail_screen.dart';
 
-class SharedCabinetsScreen extends StatelessWidget {
+class SharedCabinetsScreen extends StatefulWidget {
   const SharedCabinetsScreen({super.key});
+
+  @override
+  State<SharedCabinetsScreen> createState() => _SharedCabinetsScreenState();
+}
+
+class _SharedCabinetsScreenState extends State<SharedCabinetsScreen> {
+  bool _cabinetsLoaded = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Load cabinets only once
+    if (!_cabinetsLoaded) {
+      final cabinetProvider =
+          Provider.of<CabinetProvider>(context, listen: false);
+      if (cabinetProvider.cabinets.isEmpty) {
+        cabinetProvider.loadCabinets();
+      }
+      _cabinetsLoaded = true;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

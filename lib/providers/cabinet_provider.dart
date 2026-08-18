@@ -362,6 +362,62 @@ class CabinetProvider extends ChangeNotifier {
     return users;
   }
 
+  /// Share cabinet with multiple users at once
+  Future<Map<String, dynamic>> bulkShareCabinet({
+    required String cabinetId,
+    required List<String> emails,
+    required String permission,
+  }) async {
+    try {
+      _setLoading(true);
+      final result = await CabinetShareService.instance.bulkShareCabinet(
+        cabinetId: cabinetId,
+        emails: emails,
+        permission: permission,
+      );
+      loadCabinets();
+      _error = null;
+      _setLoading(false);
+      return result;
+    } catch (e) {
+      _error = e.toString();
+      _setLoading(false);
+      return {'successCount': 0, 'results': []};
+    }
+  }
+
+  /// Get all pending (not yet accepted) invitations for a cabinet
+  Future<List<Map<String, dynamic>>> listPendingInvites(
+      String cabinetId) async {
+    try {
+      return await CabinetShareService.instance.listCabinetInvites(cabinetId);
+    } catch (e) {
+      _error = e.toString();
+      return [];
+    }
+  }
+
+  /// Revoke a pending invitation
+  Future<bool> revokePendingInvite({
+    required String cabinetId,
+    required String inviteId,
+  }) async {
+    try {
+      _setLoading(true);
+      await CabinetShareService.instance.revokeInvite(
+        cabinetId: cabinetId,
+        inviteId: inviteId,
+      );
+      _error = null;
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _error = e.toString();
+      _setLoading(false);
+      return false;
+    }
+  }
+
   // ── Find Cabinet ────────────────────────────────────────
   CabinetModel? getCabinetById(String id) {
     try {
