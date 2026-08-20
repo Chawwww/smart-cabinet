@@ -1,4 +1,6 @@
 // lib/screens/manage_cabinets_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/cabinet_model.dart'; // ✅ ADD THIS IMPORT
@@ -9,6 +11,7 @@ import '../widgets/loading_widget.dart';
 import 'add_edit_cabinet_screen.dart';
 import 'cabinet_detail_screen.dart';
 import '../utils/responsive_layout.dart';
+import '../services/iot_service.dart';
 
 class ManageCabinetsScreen extends StatefulWidget {
   const ManageCabinetsScreen({super.key});
@@ -20,11 +23,15 @@ class ManageCabinetsScreen extends StatefulWidget {
 class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  StreamSubscription<String>? _bleStatusSubscription;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _bleStatusSubscription = IoTService().connectionStatus.listen((_) {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CabinetProvider>().loadCabinets();
       context.read<CabinetProvider>().loadBoxes();
@@ -33,6 +40,7 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
 
   @override
   void dispose() {
+    _bleStatusSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -51,6 +59,9 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
 
     final ownedCabinets = cabinetProvider.ownedCabinets;
     final sharedCabinets = cabinetProvider.sharedCabinets;
+    final linkedBleCount = cabinetProvider.accessibleCabinets
+        .where((cabinet) => cabinet.isLinkedToDevice)
+        .length;
 
     return Scaffold(
       appBar: AppBar(
@@ -105,29 +116,95 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          // ── Owned Cabinets Tab ──
-          ownedCabinets.isEmpty
-              ? _buildEmptyState(
-                  icon: Icons.cabin_outlined,
-                  title: 'No Cabinets Yet',
-                  subtitle: 'Create your first cabinet to start organizing',
-                  action: () => _addCabinet(context),
-                )
-              : _buildCabinetGrid(ownedCabinets, authProvider),
+          _buildBleSummary(linkedBleCount),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // ── Owned Cabinets Tab ──
+                ownedCabinets.isEmpty
+                    ? _buildEmptyState(
+                        icon: Icons.cabin_outlined,
+                        title: 'No Cabinets Yet',
+                        subtitle:
+                            'Create your first cabinet to start organizing',
+                        action: () => _addCabinet(context),
+                      )
+                    : _buildCabinetGrid(ownedCabinets, authProvider),
 
-          // ── Shared Cabinets Tab ──
-          sharedCabinets.isEmpty
-              ? _buildEmptyState(
-                  icon: Icons.people_outline,
-                  title: 'No Shared Cabinets',
-                  subtitle:
-                      'When someone shares a cabinet with you, it will appear here',
-                  action: null,
-                )
-              : _buildCabinetGrid(sharedCabinets, authProvider),
+                // ── Shared Cabinets Tab ──
+                sharedCabinets.isEmpty
+                    ? _buildEmptyState(
+                        icon: Icons.people_outline,
+                        title: 'No Shared Cabinets',
+                        subtitle:
+                            'When someone shares a cabinet with you, it will appear here',
+                        action: null,
+                      )
+                    : _buildCabinetGrid(sharedCabinets, authProvider),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBleSummary(int linkedBleCount) {
+    final iotService = IoTService();
+    final activeCount = iotService.isConnected ? 1 : 0;
+    final isReconnecting = iotService.isReconnecting;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.blue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            activeCount == 1
+                ? Icons.bluetooth_connected
+                : Icons.bluetooth_disabled,
+            color: activeCount == 1 ? Colors.green : Colors.blue,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$linkedBleCount BLE device${linkedBleCount == 1 ? '' : 's'} linked',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  activeCount == 1
+                      ? '1 currently connected'
+                      : (isReconnecting
+                          ? 'Reconnecting to the selected cabinet…'
+                          : 'No device currently connected'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pushNamed(context, '/smart-cabinet-control'),
+            child: const Text('Manage BLE'),
+          ),
         ],
       ),
     );
@@ -217,10 +294,62 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
             MaterialPageRoute(
               builder: (_) => AddEditCabinetScreen(cabinet: cabinet),
             ),
-          ).then((_) => context.read<CabinetProvider>().reloadCabinets()),
+          ).then((_) {
+            if (context.mounted) {
+              context.read<CabinetProvider>().reloadCabinets();
+            }
+          }),
+          onDelete: cabinet.userId == authProvider.userId
+              ? () => _confirmDeleteCabinet(cabinet)
+              : null,
         );
       },
     );
+  }
+
+  Future<void> _confirmDeleteCabinet(CabinetModel cabinet) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Cabinet?'),
+        content: Text(
+          'Delete "${cabinet.name}"?\n\n'
+          'The cabinet will be removed permanently. Its item and box records '
+          'will not be deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || cabinet.id == null || !mounted) return;
+
+    final provider = context.read<CabinetProvider>();
+    await provider.deleteCabinet(cabinet.id!);
+    if (!mounted) return;
+
+    if (provider.error == null) {
+      provider.reloadCabinets();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('"${cabinet.name}" deleted')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not delete cabinet: ${provider.error}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _addCabinet(BuildContext context) {
@@ -230,8 +359,10 @@ class _ManageCabinetsScreenState extends State<ManageCabinetsScreen>
         builder: (_) => const AddEditCabinetScreen(),
       ),
     ).then((_) {
-      context.read<CabinetProvider>().reloadCabinets();
-      context.read<CabinetProvider>().reloadBoxes();
+      if (context.mounted) {
+        context.read<CabinetProvider>().reloadCabinets();
+        context.read<CabinetProvider>().reloadBoxes();
+      }
     });
   }
 }

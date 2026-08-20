@@ -1,13 +1,13 @@
 // lib/screens/smart_cabinet_control_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../services/iot_service.dart';
-import '../providers/auth_provider.dart';
 import '../providers/item_provider.dart';
 import '../providers/cabinet_provider.dart';
-import '../widgets/loading_widget.dart';
 import 'add_edit_item_screen.dart';
 
 class SmartCabinetControlScreen extends StatefulWidget {
@@ -36,16 +36,26 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   // Linked cabinet info
   String? _linkedCabinetId;
   String? _linkedCabinetName;
+  StreamSubscription<Map<String, dynamic>>? _doorSubscription;
+  StreamSubscription<String>? _connectionSubscription;
 
   @override
   void initState() {
     super.initState();
+    final iotService = context.read<IoTService>();
+    _selectedDeviceId =
+        iotService.connectedDeviceId ?? iotService.preferredDeviceId;
+    _connectionStatus = iotService.isConnected
+        ? 'Connected'
+        : (iotService.isReconnecting ? 'Reconnecting' : 'Disconnected');
     _listenToIoTEvents();
     _loadLinkedCabinet();
   }
 
   @override
   void dispose() {
+    _doorSubscription?.cancel();
+    _connectionSubscription?.cancel();
     super.dispose();
   }
 
@@ -128,7 +138,8 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   void _listenToIoTEvents() {
     final iotService = context.read<IoTService>();
 
-    iotService.doorEvents.listen((event) {
+    _doorSubscription = iotService.doorEvents.listen((event) {
+      if (!mounted) return;
       final door = event['door'] as String? ?? '';
       final isOpen = event['isOpen'] as bool? ?? false;
 
@@ -157,7 +168,8 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
       }
     });
 
-    iotService.connectionStatus.listen((status) {
+    _connectionSubscription = iotService.connectionStatus.listen((status) {
+      if (!mounted) return;
       setState(() => _connectionStatus = status);
 
       if (status == 'Connected') {
@@ -168,7 +180,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             backgroundColor: Colors.green,
           ),
         );
-      } else if (status == 'Disconnected') {
+      } else if (status == 'Disconnected' && !iotService.isReconnecting) {
         setState(() {
           _linkedCabinetId = null;
           _linkedCabinetName = null;
@@ -280,6 +292,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
     final iotService = context.read<IoTService>();
     final success = await iotService.connectToDevice(deviceId);
 
+    if (!mounted) return;
     setState(() => _isConnecting = false);
 
     if (success) {
@@ -303,6 +316,7 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   Future<void> _disconnect() async {
     final iotService = context.read<IoTService>();
     await iotService.disconnect();
+    if (!mounted) return;
     setState(() {
       _selectedDeviceId = null;
       _upperDoorOpen = false;
@@ -439,7 +453,11 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
             if (isConnected && _linkedCabinetId != null)
               _buildLinkedCabinetInfo(textColor, subColor, isDark),
             const SizedBox(height: 20),
-            if (!isConnected) _buildScanSection(textColor, subColor),
+            if (!isConnected) ...[
+              _buildSavedCabinets(textColor, subColor),
+              const SizedBox(height: 16),
+              _buildScanSection(textColor, subColor),
+            ],
             if (isConnected) ...[
               const SizedBox(height: 16),
               _buildControlSection(textColor, subColor, isDark),
@@ -460,6 +478,61 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
   }
 
   // ── Widget Builders ────────────────────────────────
+  Widget _buildSavedCabinets(Color textColor, Color subColor) {
+    final linkedCabinets = context
+        .watch<CabinetProvider>()
+        .accessibleCabinets
+        .where((cabinet) => cabinet.isLinkedToDevice)
+        .toList();
+
+    if (linkedCabinets.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'My BLE Cabinets',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: textColor,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...linkedCabinets.map((cabinet) {
+          final deviceId = cabinet.bleDeviceId!;
+          final isTrying = _selectedDeviceId == deviceId &&
+              (_isConnecting || _connectionStatus == 'Reconnecting');
+          return Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ListTile(
+              leading: const Icon(Icons.kitchen, color: Color(0xFF4ECDC4)),
+              title: Text(cabinet.name, style: TextStyle(color: textColor)),
+              subtitle: Text(
+                cabinet.location?.isNotEmpty == true
+                    ? cabinet.location!
+                    : deviceId,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: subColor),
+              ),
+              trailing: isTrying
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : ElevatedButton(
+                      onPressed: () => _connectToDevice(deviceId),
+                      child: const Text('Connect'),
+                    ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _buildConnectionStatus(
       bool isConnected, Color textColor, Color subColor) {
     return Card(
@@ -471,7 +544,11 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
               width: 12,
               height: 12,
               decoration: BoxDecoration(
-                color: isConnected ? Colors.green : Colors.red,
+                color: isConnected
+                    ? Colors.green
+                    : (_connectionStatus == 'Reconnecting'
+                        ? Colors.orange
+                        : Colors.red),
                 shape: BoxShape.circle,
               ),
             ),
@@ -481,15 +558,23 @@ class _SmartCabinetControlScreenState extends State<SmartCabinetControlScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isConnected ? 'Connected' : 'Disconnected',
+                    isConnected ? 'Connected' : _connectionStatus,
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: isConnected ? Colors.green : Colors.red,
+                      color: isConnected
+                          ? Colors.green
+                          : (_connectionStatus == 'Reconnecting'
+                              ? Colors.orange
+                              : Colors.red),
                     ),
                   ),
                   Text(
-                    isConnected ? 'ESP32 Device' : 'No device connected',
+                    isConnected
+                        ? 'ESP32 Device'
+                        : (_connectionStatus == 'Reconnecting'
+                            ? 'Trying the last cabinet automatically'
+                            : 'No device connected'),
                     style: TextStyle(fontSize: 12, color: subColor),
                   ),
                 ],

@@ -11,6 +11,7 @@ class CabinetCard extends StatelessWidget {
   final int boxCount;
   final VoidCallback onTap;
   final VoidCallback onEdit;
+  final VoidCallback? onDelete;
 
   const CabinetCard({
     super.key,
@@ -19,6 +20,7 @@ class CabinetCard extends StatelessWidget {
     required this.boxCount,
     required this.onTap,
     required this.onEdit,
+    this.onDelete,
   });
 
   @override
@@ -26,13 +28,15 @@ class CabinetCard extends StatelessWidget {
     final authProvider = context.watch<AuthProvider>();
     final isOwner = cabinet.userId == authProvider.userId;
     final isShared = !isOwner && cabinet.hasAccess(authProvider.userId);
-    
+
     final color = cabinet.color != null
         ? Color(int.parse(cabinet.color!.replaceFirst('#', '0xFF')))
         : const Color(0xFF4ECDC4);
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final subColor = Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
-    final cardColor = Theme.of(context).cardTheme.color ?? Theme.of(context).colorScheme.surface;
+    final subColor =
+        Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55);
+    final cardColor = Theme.of(context).cardTheme.color ??
+        Theme.of(context).colorScheme.surface;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
@@ -58,7 +62,8 @@ class CabinetCard extends StatelessWidget {
               width: double.infinity,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: isDark ? 0.22 : 0.15),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
               ),
               child: Stack(
                 children: [
@@ -66,14 +71,14 @@ class CabinetCard extends StatelessWidget {
                     child: Text(cabinet.icon ?? '🗄️',
                         style: const TextStyle(fontSize: 40)),
                   ),
-                  
+
                   // ✅ Share Button - Top Right (only for owner)
                   if (isOwner)
                     Positioned(
                       top: 4,
                       right: 4,
                       child: IconButton(
-                        icon: const Icon(Icons.share_outlined, 
+                        icon: const Icon(Icons.share_outlined,
                             color: Color(0xFF4ECDC4), size: 20),
                         onPressed: () => Navigator.push(
                           context,
@@ -87,7 +92,47 @@ class CabinetCard extends StatelessWidget {
                         tooltip: 'Share Cabinet',
                       ),
                     ),
-                  
+
+                  // Delete Button (only owners can delete a cabinet)
+                  if (isOwner && onDelete != null)
+                    Positioned(
+                      bottom: 4,
+                      right: 4,
+                      child: IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        color: Colors.red,
+                        onPressed: onDelete,
+                        tooltip: 'Delete Cabinet',
+                      ),
+                    ),
+
+                  if (cabinet.isLinkedToDevice)
+                    Positioned(
+                      bottom: 5,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.88),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.bluetooth,
+                                color: Colors.white, size: 12),
+                            SizedBox(width: 3),
+                            Text('BLE',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+
                   // Edit Button - Top Left (only for owner)
                   if (isOwner)
                     Positioned(
@@ -99,7 +144,7 @@ class CabinetCard extends StatelessWidget {
                         onPressed: onEdit,
                       ),
                     ),
-                  
+
                   // Favourite Badge
                   if (cabinet.isFavorite)
                     Positioned(
@@ -111,18 +156,19 @@ class CabinetCard extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.8),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.favorite, 
+                        child: const Icon(Icons.favorite,
                             color: Colors.red, size: 14),
                       ),
                     ),
-                  
+
                   // ✅ Shared Badge
                   if (isShared)
                     Positioned(
                       bottom: 4,
                       right: 4,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: Colors.blue.withValues(alpha: 0.85),
                           borderRadius: BorderRadius.circular(10),
@@ -147,7 +193,7 @@ class CabinetCard extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             // ── Bottom Section ─────────────────────────────
             Padding(
               padding: const EdgeInsets.all(12),
@@ -168,13 +214,16 @@ class CabinetCard extends StatelessWidget {
                       // Permission badge for shared cabinets
                       if (isShared)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: _getPermissionColor(cabinet.getPermission(authProvider.userId)),
+                            color: _getPermissionColor(
+                                cabinet.getPermission(authProvider.userId)),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            _getPermissionLabel(cabinet.getPermission(authProvider.userId)),
+                            _getPermissionLabel(
+                                cabinet.getPermission(authProvider.userId)),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 8,
@@ -235,19 +284,27 @@ class CabinetCard extends StatelessWidget {
 
   String _getPermissionLabel(String permission) {
     switch (permission) {
-      case 'view': return 'View';
-      case 'edit': return 'Edit';
-      case 'admin': return 'Admin';
-      default: return 'View';
+      case 'view':
+        return 'View';
+      case 'edit':
+        return 'Edit';
+      case 'admin':
+        return 'Admin';
+      default:
+        return 'View';
     }
   }
 
   Color _getPermissionColor(String permission) {
     switch (permission) {
-      case 'view': return const Color(0xFF636E72);
-      case 'edit': return const Color(0xFF4ECDC4);
-      case 'admin': return const Color(0xFF6C5CE7);
-      default: return const Color(0xFF636E72);
+      case 'view':
+        return const Color(0xFF636E72);
+      case 'edit':
+        return const Color(0xFF4ECDC4);
+      case 'admin':
+        return const Color(0xFF6C5CE7);
+      default:
+        return const Color(0xFF636E72);
     }
   }
 }

@@ -1,9 +1,12 @@
 // lib/services/iot_service.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_constants.dart';
 
@@ -36,13 +39,21 @@ class IoTService {
   IoTService._internal();
 
   final FlutterReactiveBle _ble = FlutterReactiveBle();
+  static const MethodChannel _backgroundChannel =
+      MethodChannel('smart_cabinet/ble_background');
+  static const String _lastDeviceKey = 'ble_last_device_id';
 
   String? _connectedDeviceId;
   bool _isConnected = false;
   bool _isScanning = false;
   bool _isDisconnecting = false;
+  bool _manualDisconnect = false;
+  bool _initialized = false;
+  String? _preferredDeviceId;
+  Timer? _reconnectTimer;
+  int _reconnectAttempt = 0;
 
-  List<DiscoveredDevice> _discoveredDevices = [];
+  final List<DiscoveredDevice> _discoveredDevices = [];
 
   StreamSubscription<DiscoveredDevice>? _scanSubscription;
   StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
@@ -69,6 +80,8 @@ class IoTService {
   bool get isLowerDoorOpen => _lowerDoorOpen;
 
   String? get connectedDeviceId => _connectedDeviceId;
+  String? get preferredDeviceId => _preferredDeviceId;
+  bool get isReconnecting => _reconnectTimer?.isActive ?? false;
 
   List<DiscoveredDevice> get discoveredDevices => _discoveredDevices;
 
@@ -76,32 +89,17 @@ class IoTService {
   // Initialize
   // ──────────────────────────────────────────────
   Future<void> initialize() async {
-    await _requestPermissions();
-  }
+    if (_initialized) return;
+    _initialized = true;
 
-  Future<void> _requestPermissions() async {
-    // Request all required permissions
-    final permissions = [
-      Permission.bluetooth,
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-      Permission.locationWhenInUse,
-      Permission.locationAlways,
-    ];
+    final prefs = await SharedPreferences.getInstance();
+    _preferredDeviceId = prefs.getString(_lastDeviceKey);
 
-    final results = await permissions.request();
-
-    // Check which permissions were granted
-    for (final entry in results.entries) {
-      print('📱 Permission ${entry.key}: ${entry.value}');
-    }
-
-    final allGranted = results.values.every((status) => status.isGranted);
-
-    if (!allGranted) {
-      print('⚠️ Some permissions were denied');
-    } else {
-      print('✅ All permissions granted');
+    // Do not interrupt startup with a permission dialog. Once the user has
+    // connected at least once, reconnect silently on subsequent app starts.
+    final canReconnect = await Permission.bluetoothConnect.isGranted;
+    if (canReconnect && _preferredDeviceId != null) {
+      unawaited(connectToDevice(_preferredDeviceId!, remember: false));
     }
   }
 
@@ -152,13 +150,25 @@ class IoTService {
   // ──────────────────────────────────────────────
   // Connect
   // ──────────────────────────────────────────────
-  Future<bool> connectToDevice(String deviceId) async {
+  Future<bool> connectToDevice(String deviceId, {bool remember = true}) async {
     print('🔗 Connecting to device: $deviceId');
     try {
-      if (_isConnected || _connectionSubscription != null) {
-        await disconnect();
+      // Android 13+ needs this before it can visibly run the BLE foreground
+      // service. A denial does not block a normal foreground connection.
+      if (Platform.isAndroid && await Permission.notification.isDenied) {
+        await Permission.notification.request();
       }
+      _manualDisconnect = false;
+      _reconnectTimer?.cancel();
+      _preferredDeviceId = deviceId;
+      if (remember) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_lastDeviceKey, deviceId);
+      }
+
+      await _cancelActiveConnection();
       await stopScan();
+      _connectionStatusController.add('Connecting');
       _connectionSubscription = _ble
           .connectToDevice(
         id: deviceId,
@@ -170,7 +180,10 @@ class IoTService {
           if (update.connectionState == DeviceConnectionState.connected) {
             _connectedDeviceId = deviceId;
             _isConnected = true;
+            _reconnectAttempt = 0;
+            _reconnectTimer?.cancel();
             _connectionStatusController.add("Connected");
+            unawaited(_startBackgroundConnection(deviceId));
 
             // Subscribe to BOTH door sensors
             _listenDoorSensor(CabinetDoor.upper);
@@ -178,43 +191,57 @@ class IoTService {
           }
 
           if (update.connectionState == DeviceConnectionState.disconnected) {
-            _handleDisconnected();
+            _handleDisconnected(deviceId);
           }
         },
-        onError: (e) => _connectionStatusController.add("Connection error: $e"),
+        onError: (e) {
+          _connectionStatusController.add("Connection error: $e");
+          _handleDisconnected(deviceId);
+        },
       );
       return true;
     } catch (e) {
       print('❌ Connection failed: $e');
       _connectionStatusController.add("Failed: $e");
+      _scheduleReconnect(deviceId);
       return false;
     }
   }
 
+  /// Disconnect at the user's request and forget the automatic reconnect
+  /// target. Switching cabinets uses [_cancelActiveConnection] instead.
   Future<void> disconnect() async {
     if (_isDisconnecting) return;
     _isDisconnecting = true;
-    final deviceId = _connectedDeviceId;
+    _manualDisconnect = true;
+    _reconnectTimer?.cancel();
     try {
-      await stopScan();
-      await _upperDoorSubscription?.cancel();
-      await _lowerDoorSubscription?.cancel();
-      await _connectionSubscription?.cancel();
-      if (deviceId != null) await _ble.clearGattCache(deviceId);
+      await _cancelActiveConnection();
+      _preferredDeviceId = null;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_lastDeviceKey);
+      await _stopBackgroundConnection();
     } finally {
-      _upperDoorSubscription = null;
-      _lowerDoorSubscription = null;
-      _connectionSubscription = null;
-      _connectedDeviceId = null;
-      _isConnected = false;
-      _upperDoorOpen = false;
-      _lowerDoorOpen = false;
       _isDisconnecting = false;
       _connectionStatusController.add('Disconnected');
     }
   }
 
-  Future<void> _handleDisconnected() async {
+  Future<void> _cancelActiveConnection() async {
+    await stopScan();
+    await _upperDoorSubscription?.cancel();
+    await _lowerDoorSubscription?.cancel();
+    await _connectionSubscription?.cancel();
+    _upperDoorSubscription = null;
+    _lowerDoorSubscription = null;
+    _connectionSubscription = null;
+    _connectedDeviceId = null;
+    _isConnected = false;
+    _upperDoorOpen = false;
+    _lowerDoorOpen = false;
+  }
+
+  Future<void> _handleDisconnected(String deviceId) async {
     if (_isDisconnecting) return;
     await _upperDoorSubscription?.cancel();
     await _lowerDoorSubscription?.cancel();
@@ -226,6 +253,53 @@ class IoTService {
     _upperDoorOpen = false;
     _lowerDoorOpen = false;
     _connectionStatusController.add('Disconnected');
+    _scheduleReconnect(deviceId);
+  }
+
+  void _scheduleReconnect(String deviceId) {
+    if (_manualDisconnect || _preferredDeviceId != deviceId) return;
+    if (_reconnectTimer?.isActive ?? false) return;
+
+    final delaySeconds = _reconnectAttempt == 0
+        ? 2
+        : (_reconnectAttempt < 5 ? 1 << _reconnectAttempt : 30);
+    _reconnectAttempt++;
+    _connectionStatusController.add('Reconnecting');
+    unawaited(_updateBackgroundConnection('Reconnecting to cabinet…'));
+    _reconnectTimer =
+        Timer(Duration(seconds: delaySeconds.clamp(2, 30).toInt()), () {
+      if (!_manualDisconnect &&
+          !_isConnected &&
+          _preferredDeviceId == deviceId) {
+        unawaited(connectToDevice(deviceId, remember: false));
+      }
+    });
+  }
+
+  Future<void> _startBackgroundConnection(String deviceId) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _backgroundChannel.invokeMethod('start', {
+        'message': 'Connected to smart cabinet',
+        'deviceId': deviceId,
+      });
+    } on PlatformException catch (e) {
+      print('⚠️ Could not start BLE foreground service: $e');
+    }
+  }
+
+  Future<void> _updateBackgroundConnection(String message) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _backgroundChannel.invokeMethod('update', {'message': message});
+    } on PlatformException catch (_) {}
+  }
+
+  Future<void> _stopBackgroundConnection() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _backgroundChannel.invokeMethod('stop');
+    } on PlatformException catch (_) {}
   }
 
   // ──────────────────────────────────────────────
@@ -355,6 +429,7 @@ class IoTService {
   // Dispose
   // ──────────────────────────────────────────────
   void dispose() {
+    _reconnectTimer?.cancel();
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
     _upperDoorSubscription?.cancel();

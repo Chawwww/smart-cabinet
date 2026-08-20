@@ -76,6 +76,7 @@ void main() async {
 
   await NotificationService().initialize();
   AIService().initialize();
+  await IoTService().initialize();
 
   // ─────────────────────────────────────────────────────────
   // Bridge BLE door-sensor events to system notifications
