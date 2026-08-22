@@ -2,6 +2,26 @@
 
 Smart Cabinet Finder is a Flutter and Firebase inventory application for organizing physical cabinets, boxes, and stored items. It combines real-time inventory, role-based cabinet sharing, expiring QR invitations, notifications, AI-assisted item entry, and Bluetooth Low Energy (BLE) control for a two-door ESP32 cabinet.
 
+## Application flow
+
+```mermaid
+flowchart TD
+    A[Install and open app] --> B[Sign in or create account]
+    B --> C[Create a cabinet]
+    C --> D[Add boxes and inventory items]
+    C --> E[Open Smart Cabinet Control]
+    E --> F[Scan for an ESP32 BLE device]
+    F --> G[Connect and link device to cabinet]
+    G --> H[Control doors and LEDs]
+    G --> I[Receive door-state notifications]
+    G --> J[Auto-reconnect in background]
+    C --> K[Share cabinet]
+    K --> L[Direct account sharing]
+    K --> M[Expiring link or QR invitation]
+```
+
+For detailed owner, BLE, sharing, installation, and developer flows, see [docs/USER_FLOW.md](docs/USER_FLOW.md).
+
 The current application is primarily developed and tested for Android. Flutter platform folders for iOS, web, Windows, macOS, and Linux are present, but some mobile permissions and `dart:io`-based features require additional work before those targets can be considered production-ready.
 
 ## Current feature status
@@ -120,11 +140,22 @@ test/           Flutter tests
    AZURE_SPEECH_REGION=your-region
    ```
 
-6. Run the Android application:
+6. Run the Android application. Pass a Gemini key only if AI features are required:
 
    ```powershell
-   flutter run
+   flutter run --dart-define=GEMINI_API_KEY=your_key
    ```
+
+   Without `GEMINI_API_KEY`, the rest of the application can run, but Gemini-powered features will be unavailable.
+
+## Build an Android APK
+
+```powershell
+flutter pub get
+flutter build apk --release --dart-define=GEMINI_API_KEY=your_key
+```
+
+The APK is generated at `build/app/outputs/flutter-apk/app-release.apk`. The current Android project uses debug signing for release builds; configure a private release keystore before production distribution.
 
 ## Firebase deployment
 
@@ -217,7 +248,7 @@ The automated test suite currently covers language-code normalization and fallba
 
 ## Known limitations and production checklist
 
-1. **Rotate the Gemini credential before release.** A Gemini API credential is currently embedded in `lib/config/app_constants.dart`. Mobile binaries cannot safely hold a private service credential. Rotate it and move AI calls behind an authenticated server endpoint before publishing the app.
+1. **Protect AI credentials.** The app reads `GEMINI_API_KEY` through `--dart-define`; mobile binaries still cannot safely hold private credentials. For production, proxy AI calls through an authenticated server endpoint and restrict/rotate any key previously used in an APK.
 2. **Configure Firebase App Check or leave enforcement disabled.** The app currently has no App Check provider. Enabling enforcement now can reject Firestore and callable-function requests.
 3. **Complete iOS permissions.** The current iOS plist includes Bluetooth descriptions but needs appropriate camera, photo-library, microphone, notification, and URL/deep-link configuration for all mobile features.
 4. **Finish automatic deep-link handling.** Android declares the `smartcabinet://join` intent filter, but the app does not currently consume incoming links automatically. Pasting an HTTPS link into **Join invitation** is the reliable acceptance flow.
